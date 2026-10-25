@@ -3,7 +3,7 @@ import json, re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).parents[1]
-state={"customers":[],"reservations":[],"consultations":[],"followups":[],"audits":[],"photos":[],"waitlist":[],"inventory":[],"treatments":[],"membershipUsages":[],"payments":[],"messageDrafts":[],"staffShifts":[],"intakeForms":[],"consents":[],"campaigns":[],"snapshots":[],"messageQueue":[],"hygieneTasks":[],"shopTasks":[],"staffNames":["원장"],"rooms":["관리실 A"],"services":[],"weekSeeded":True,"shopConfig":{"name":"테스트 스킨샵","parkingMinutes":120,"cancelHours":24,"commissions":[]}}
+state={"customers":[],"reservations":[],"consultations":[],"followups":[],"audits":[],"photos":[],"waitlist":[],"inventory":[],"treatments":[],"membershipUsages":[],"payments":[],"messageDrafts":[],"staffShifts":[],"intakeForms":[],"consents":[],"campaigns":[],"snapshots":[],"messageQueue":[],"hygieneTasks":[],"shopTasks":[],"staffNames":[],"rooms":["관리실 A"],"services":[],"weekSeeded":True,"shopConfig":{"name":"테스트 스킨샵","parkingMinutes":120,"cancelHours":24,"commissions":[]}}
 backend={'member':False,'rev':0,'data':state}
 SUID='bb0ac294-cccc-4f48-955a-908bd270cee2'; SHOP='e6ab12ff-ffff-4f48-a98a-ccbca2d55ab4'
 
@@ -13,7 +13,7 @@ try:
   browser=p.chromium.launch(headless=True,executable_path='/usr/bin/chromium',args=['--no-sandbox'])
   def setup(page):
    page.on('pageerror',lambda e:errors.append(str(e)))
-   def config(route):route.fulfill(status=200,content_type='application/javascript',body="window.ONGEOL_CONFIG={apiMode:'supabase',supabaseUrl:'https://demo.supabase.co',supabasePublishableKey:'sb_publishable_test_key'};")
+   def config(route):route.fulfill(status=200,content_type='application/javascript',body="window.ONGEOL_CONFIG={apiMode:'supabase',supabaseUrl:'https://demo.supabase.co',supabasePublishableKey:'sb_publishable_test_key',phoneAuthEnabled:false};")
    def local(route):
     from urllib.parse import urlparse
     path=urlparse(route.request.url).path.lstrip('/') or 'index.html'
@@ -48,23 +48,46 @@ try:
   html=(ROOT/'web'/'index.html').read_text().replace('<script src="./config.js"></script><script type="module" src="./app.js"></script>','')
   page.set_content(html.replace('<link rel="stylesheet" href="./style.css">','').replace('<link rel="manifest" href="./manifest.webmanifest">','').replace('<link rel="icon" type="image/svg+xml" href="./icon.svg">',''),wait_until='domcontentloaded')
   page.add_style_tag(content=(ROOT/'web'/'style.css').read_text())
-  page.evaluate("window.ONGEOL_CONFIG={apiMode:'supabase',supabaseUrl:'https://demo.supabase.co',supabasePublishableKey:'sb_publishable_test_key'};")
+  page.evaluate("window.ONGEOL_CONFIG={apiMode:'supabase',supabaseUrl:'https://demo.supabase.co',supabasePublishableKey:'sb_publishable_test_key',phoneAuthEnabled:false};")
   domain=(ROOT/'web'/'domain.js').read_text().replace('export const ','const ').replace('export function ','function ')
   sync=(ROOT/'web'/'sync.js').read_text().replace('export const ','const ').replace('export function ','function ').replace('export class ','class ')
   app=(ROOT/'web'/'app.js').read_text().replace("import { bookingConflict } from './domain.js';",'').replace("import { RemoteState, serverMode, configurationReady } from './sync.js';",'')
   code='\n'.join(['(function(){',domain,'window.bookingConflict=bookingConflict;})();','(function(){',sync,'Object.assign(window,{RemoteState,serverMode,configurationReady});})();',app])
   page.evaluate((ROOT/'tests'/'mock_fetch.js').read_text())
   page.add_script_tag(content=code)
-  assert page.get_by_text('온결',exact=True).count() >= 1
+  assert page.get_by_text('Aesthetic Manager',exact=False).count() >= 1
   page.locator('#authEmail').fill('test@example.com');page.locator('#authPassword').fill('somepassword')
   page.get_by_role('button',name='로그인',exact=True).click()
   page.locator('#shopNameInput').fill('테스트 스킨샵')
-  page.get_by_role('button',name='새 매장 만들기').click()
+  page.get_by_role('button',name='매장 개설 · 관리자 계정으로 시작').click()
   page.locator('#main').get_by_text('오늘 예약').wait_for()
   assert page.get_by_text('0명',exact=True).count()>=1
   # Register a service with the real UI.
   page.locator('[data-nav="settings"]').first.evaluate('(el)=>el.click()')
   page.get_by_text('관리 프로그램').first.wait_for()
+  assert page.get_by_text('직원 0명',exact=False).count()>=1
+  page.locator('[data-extra="positionNew"]').first.click()
+  page.locator('#positionName').fill('실장')
+  page.locator('[data-extra="positionSave"]').click()
+  page.wait_for_timeout(100)
+  page.locator('[data-extra="staffProfileNew"]').first.click()
+  page.locator('#staffProfileName').fill('가상 첫 직원')
+  page.locator('#staffProfilePosition').select_option('pos-1')
+  page.locator('[data-extra="staffProfileSave"]').click()
+  page.wait_for_timeout(100)
+  assert len(page.evaluate('window.__cloud.staff'))==1
+  assert page.get_by_text('가상 첫 직원 · 실장',exact=False).count()>=1
+  page.locator('[data-extra="staffProfileNew"]').first.click()
+  page.locator('#staffProfileName').fill('가상 둘째 직원')
+  page.locator('[data-extra="staffProfileSave"]').click()
+  page.wait_for_timeout(100)
+  assert len(page.evaluate('window.__cloud.staff'))==2
+  assert page.get_by_text('가상 둘째 직원',exact=False).count()>=1
+  page.once('dialog',lambda d:d.accept())
+  page.locator('[data-extra="staffProfileLinkOwner"]').first.click()
+  page.wait_for_timeout(100)
+  assert any(x.get('auth_user_id') == SUID for x in page.evaluate('window.__cloud.staff'))
+
   page.locator('[data-extra="serviceAdd"]').first.click()
   page.locator('#svName').fill('테스트 수분관리')
   page.locator('#svMinutes').fill('60')

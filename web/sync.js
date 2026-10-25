@@ -11,7 +11,7 @@ const KEY='ongeol_supabase_session_v07';
 const deepCopy = obj => JSON.parse(JSON.stringify(obj));
 const enc = text => encodeURIComponent(text);
 export class RemoteState {
-  constructor(onError){this.onError=onError;this.session=null;this.shopId=null;this.role=null;this.shopName='';this.revision=0;this.pending=null;this.running=false;this.failed=false;this.refreshing=null;this.dirty=false;
+  constructor(onError){this.onError=onError;this.session=null;this.shopId=null;this.role=null;this.shopName='';this.revision=0;this.staff=[];this.positions=[];this.pending=null;this.running=false;this.failed=false;this.refreshing=null;this.dirty=false;
     try{const s=JSON.parse(localStorage.getItem(KEY)||'null');if(s?.access_token&&s?.refresh_token)this.session=s}catch{}}
   get token(){return this.session?.access_token||''}
   get base(){return (conf().supabaseUrl||'').replace(/\/$/,'')}
@@ -41,13 +41,46 @@ export class RemoteState {
   }
   async ensureSession(){if(!this.session)return null;if((this.session.expires_at||0)*1000<Date.now()+120000)await this.refresh();return this.session;}
   async restore(){if(!this.session)return false;try{await this.ensureSession();const u=await this.raw('/auth/v1/user');if(u?.id){this.session.user=u;this.storeSession(this.session);return true}}catch{this.storeSession(null)}return false;}
-  async logout(){try{if(this.session)await this.raw('/auth/v1/logout',{method:'POST'});}catch{}this.storeSession(null);this.shopId=null;this.revision=0;this.pending=null;this.failed=false;}
+  async logout(){try{if(this.session)await this.raw('/auth/v1/logout',{method:'POST'});}catch{}this.storeSession(null);this.shopId=null;this.revision=0;this.staff=[];this.positions=[];this.pending=null;this.failed=false;}
   async rpc(name,parameters){await this.ensureSession();return this.raw('/rest/v1/rpc/'+name,{method:'POST',payload:parameters});}
   async membership(){await this.ensureSession();const r=await this.raw('/rest/v1/shop_members?select=shop_id,role&user_id=eq.'+enc(this.user?.id||'')+'&limit=1');
     const m=r?.[0];if(m){this.shopId=m.shop_id;this.role=m.role;return m}return null;
   }
-  async createShop(name){const id=await this.rpc('ongeol_create_shop',{p_name:name});this.shopId=id;this.role='owner';return id;}
-  async joinShop(code){const id=await this.rpc('ongeol_join_shop',{p_code:code});this.shopId=id;return this.membership();}
+  async createShop(name){
+    const id=await this.rpc('aesthetic_create_shop',{
+      p_name:name,p_staff_name:'',p_staff_title:'',p_link_creator:false
+    });this.shopId=id;this.role='owner';return id;
+  }
+  async listStaff(){if(!this.shopId)return [];
+    const [staff,positions]=await Promise.all([
+      this.raw('/rest/v1/staff_profiles?select=id,shop_id,name,title,position_id,access_role,auth_user_id,active&shop_id=eq.'+enc(this.shopId)+'&order=created_at.asc'),
+      this.raw('/rest/v1/staff_positions?select=id,shop_id,name&shop_id=eq.'+enc(this.shopId)+'&order=created_at.asc')
+    ]);
+    this.staff=staff||[];this.positions=positions||[];
+    return this.staff;
+  }
+  async addStaff(name,positionId=null,role='therapist'){
+    return this.rpc('aesthetic_create_staff_v2',{p_shop:this.shopId,p_name:name,p_position_id:positionId||null,p_access_role:role});
+  }
+  async editStaff(id,name,positionId,role,active){
+    return this.rpc('aesthetic_update_staff_v2',{p_shop:this.shopId,p_staff:id,p_name:name,p_position_id:positionId||null,p_access_role:role,p_active:!!active});
+  }
+  async addPosition(name){return this.rpc('aesthetic_add_position',{p_shop:this.shopId,p_name:name});}
+  async editPosition(id,name){return this.rpc('aesthetic_update_position',{p_shop:this.shopId,p_position:id,p_name:name});}
+  async deletePosition(id){return this.rpc('aesthetic_delete_position',{p_shop:this.shopId,p_position:id});}
+  async updateContactPhone(value){
+    await this.ensureSession();
+    const phone=String(value||'').trim();
+    if(phone && !/^[+0-9\-\s()]{8,22}$/.test(phone))throw new ApiFailure('연락처 형식을 확인해 줘.');
+    const user=await this.raw('/auth/v1/user',{method:'PUT',payload:{data:{...(this.user?.user_metadata||{}),contact_phone:phone}}});
+    if(!user?.id||user.id!==this.user?.id)throw new ApiFailure('개인정보 업데이트 응답 확인 실패');
+    this.session.user=user;this.storeSession(this.session);return user;
+  }
+  async linkOwnerStaff(id){return this.rpc('aesthetic_link_owner_staff',{p_shop:this.shopId,p_staff:id});}
+  async unlinkOwnerStaff(id){return this.rpc('aesthetic_unlink_owner_staff',{p_shop:this.shopId,p_staff:id});}
+  async inviteStaff(id){return this.rpc('aesthetic_invite_staff',{p_shop:this.shopId,p_staff:id});}
+  async renameShop(name){await this.rpc('aesthetic_rename_shop',{p_shop:this.shopId,p_name:name});this.shopName=name;}
+  async joinShop(code){const id=await this.rpc('aesthetic_join_shop',{p_code:code});this.shopId=id;return this.membership();}
   async invite(role='therapist'){return this.rpc('ongeol_create_invite',{p_shop:this.shopId,p_role:role});}
   async read(){if(!this.shopId)throw new ApiFailure('매장 선택이 필요합니다.');await this.ensureSession();
     const [rows,shops]=await Promise.all([
@@ -56,7 +89,13 @@ export class RemoteState {
     ]);
     if(!rows?.length)throw new ApiFailure('매장 데이터에 접근할 수 없습니다. 관리자에게 문의하세요.',403);
     this.revision=Number(rows[0].revision);this.shopName=shops?.[0]?.name||'내 피부관리샵';
-    const data=rows[0].data||{};await this.hydratePhotos(data);return data;
+    const data=rows[0].data||{};
+    if(data.staffNames?.length===1&&data.staffNames[0]==='원장'&&
+       !(data.reservations||[]).some(r=>r.staff==='원장'))data.staffNames=[];
+    const staff=await this.listStaff();
+    // DB staff profiles are authoritative. Zero profiles means zero real employees.
+    data.staffNames=staff.filter(x=>x.active).map(x=>x.name);
+    await this.hydratePhotos(data);return data;
   }
   sanitized(state){const result=deepCopy(state);if(Array.isArray(result.photos))result.photos=result.photos.map(({dataUrl,...rest})=>rest);return result;}
   write(state){if(this.failed||!this.shopId)return;this.pending=this.sanitized(state);this.dirty=true;if(!this.running)void this.flush();}

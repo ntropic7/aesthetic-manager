@@ -15,7 +15,7 @@ const weekStart = d => {const day=new Date(d+'T00:00:00Z').getUTCDay();return da
 const toHHMM = n => `${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;
 const snap15 = m => Math.round(m/15)*15;
 const ZOOM_LEVELS=[.12,.16,.22,.3,.42,.55,.75,.95,1.25];
-let scheduleDate=TODAY(),scheduleMode='timetable',staffFilter='ALL',weekStaff='김원장',statusFilter='ALL',scheduleZoom=0.30,weekFit=true,editingReservationId=null,dragIntent=null,pointerBooking=null,afterCompletionId=null,suppressBookingClickUntil=0;
+let scheduleDate=TODAY(),scheduleMode='timetable',staffFilter='ALL',weekStaff='미지정',statusFilter='ALL',scheduleZoom=0.30,weekFit=true,editingReservationId=null,dragIntent=null,pointerBooking=null,afterCompletionId=null,suppressBookingClickUntil=0;
 const nav=[['today','◫','오늘'],['reservations','▦','예약'],['customers','♙','고객'],['ai','✧','상담 AI'],['memberships','◉','회원권·결제'],['operations','▧','운영 도구'],['marketing','↗','마케팅'],['analytics','▥','매출·분석'],['settings','⚙','설정']];
 const seed=()=>({customers:[
  {id:'C001',name:'김하린',phone:'010-****-1248',joined:'2025-12-03',last:'2026-10-08',type:'복합성',concerns:['홍조'],pressure:'보통',precautions:['성분 사용 전 확인 필요'],vehicle:'12가****',tags:['VIP'],membership:{name:'수분 집중관리 10회권',total:10,used:4,expire:'2027-03-31'},events:[],notes:'볼 부위 반응을 주의 깊게 확인',history:[{date:'2026-10-08',label:'수분 집중관리',note:'진정 팩 사용'}]},
@@ -50,9 +50,10 @@ function ensureDemoState(){
 ensureDemoState();
 let view='customers',selectedCustomer='C001',customerTab='overview',customerMobileDetail=false,analysisResult=null,activeConsultCid='C001',aiCase='visit';
 const $=s=>document.querySelector(s);const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function save(){if(serverMode()){remote.write(state);return}try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){toast('저장공간이 제한된 환경입니다.')}}
+function save(){if(serverMode()){if(remote.role==='therapist'){toast('직원 계정은 현재 조회 전용이야. 상세 업무별 권한 적용 후 편집이 가능해져.');return;}remote.write(state);return}try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){toast('저장공간이 제한된 환경입니다.')}}
 function toast(msg){$('#toastRoot').innerHTML=`<div class="toast">${esc(msg)}</div>`;setTimeout(()=>$('#toastRoot').innerHTML='',2900)}
 const customer=id=>state.customers.find(c=>c.id===id);
+const staffLabel = name => {const member=remote.staff?.find(x=>x.name===name);const position=remote.positions?.find(p=>p.id===member?.position_id)?.name||member?.title||'';return position?`${name} · ${position}`:name;};
 function button(label,action,extra=''){return `<button type="button" class="btn ${extra}" data-act="${action}">${label}</button>`}
 function header(eyebrow,title,subtitle,right=''){return `<div class="pagehead"><div><p class="eyebrow">${eyebrow}</p><h1>${title}</h1><p class="subtle">${subtitle}</p></div><div>${right}</div></div>`}
 function setView(v){view=v;render();window.scrollTo(0,0)}
@@ -61,15 +62,15 @@ function stat(label,value,hint){return `<div class="stat"><div class="caption">$
 const statusText={CONFIRMED:'예약 확정',ARRIVED:'방문 접수',IN_SERVICE:'관리 중',COMPLETED:'관리 완료',CANCELLED:'취소',NO_SHOW:'노쇼'};
 const CONSUMING = x => !['CANCELLED','NO_SHOW'].includes(x.status)&&!x.archived;
 const SLOT_START=9*60,SLOT_END=21*60;
-const STAFf=['김원장','이관리사'];
+const STAFf=['미지정'];
 const statusKind = code => ['CANCELLED','NO_SHOW'].includes(code)?'is-muted':code==='COMPLETED'?'is-done':code==='ARRIVED'?'is-arrived':'is-active';
 const todayReservations=() => state.reservations.filter(r=>(r.date||TODAY())===TODAY());
 const filteredReservations=() => {const first=scheduleMode==='week'?weekStart(scheduleDate):scheduleDate,last=scheduleMode==='week'?dateAdd(first,6):scheduleDate;return state.reservations.filter(r=>r.date>=first&&r.date<=last&&(scheduleMode==='week'?r.staff===weekStaff:(staffFilter==='ALL'||r.staff===staffFilter))&&(statusFilter==='ARCHIVED'?r.archived:!r.archived&&(statusFilter==='ALL'||r.status===statusFilter))).sort((a,b)=>(a.date+' '+a.time).localeCompare(b.date+' '+b.time)||a.staff.localeCompare(b.staff))};
-function renderToday(){const active=todayReservations().filter(r=>!['CANCELLED','NO_SHOW'].includes(r.status));const pendingCars=active.filter(r=>!r.parking&&customer(r.cid)?.vehicle).length;const completed=active.filter(r=>r.status==='COMPLETED').length;return header('DASHBOARD','좋은 하루의 시작, 온결',TODAY()+' · 매장 운영 현황',button('＋ 예약 등록','newReservation','primary'))+`<div class="grid4">${stat('오늘 예약',active.length+'건','확정 및 방문 포함')}${stat('관리 완료',completed+'건','완료 버튼으로 갱신')}${stat('고객 수',state.customers.length+'명','등록된 고객 데이터')}${stat('미처리 주차',pendingCars+'건','차량 등록 고객 기준')}</div><div class="layout2"><section class="panel"><div class="panelhead"><h2>오늘의 예약</h2><span class="sectiontag">시간순</span></div>${active.length?active.slice().sort((a,b)=>a.time.localeCompare(b.time)).map(r=>{const c=customer(r.cid);return `<div class="reservation"><div class="rtime">${r.time}<small>${r.minutes}분</small></div><div><p class="rname">${esc(c?.name)} <span class="status ${r.status==='COMPLETED'?'':'warn'}">${statusText[r.status]||r.status}</span></p><div class="rmeta">${esc(r.service)} · ${esc(r.staff)} · ${esc(r.room)}</div></div><button class="btn small" data-res-open="${r.id}">예약 상세 →</button></div>`}).join(''):'<div class="empty">등록된 예약이 없습니다.</div>'}<div style="text-align:right;margin-top:10px">${button('전체 예약 보기 →','goReservations','ghost small')}</div></section><div><section class="panel"><div class="panelhead"><h2>처리할 업무</h2><span class="sectiontag">매장 업무</span></div><div class="minirow"><div class="minidot">✧</div><div class="grow"><strong>상담 AI 검토</strong><span>${serverMode()?'상담 메모를 규칙 기반으로 정리하고 변경사항을 직접 검토하세요':'가상 상담을 분석하고 고객 정보 변경안을 승인해보세요'}</span></div><button data-act="goAI" class="btn small">시작</button></div><div class="minirow"><div class="minidot">🚗</div><div class="grow"><strong>주차 확인 ${pendingCars}건</strong><span>예약 카드에서 차량별 등록을 처리할 수 있어요</span></div><button data-act="goReservations" class="btn small">확인</button></div><div class="minirow"><div class="minidot">◷</div><div class="grow"><strong>잔여 횟수권 점검</strong><span>잔여 1회 고객 및 만료예정 고객 확인</span></div><button data-nav="memberships" class="btn small">보기</button></div></section><section class="panel"><div class="panelhead"><h2>AI 매장 인사이트</h2><span class="sectiontag">시연 카드</span></div><div class="callout">${serverMode()?'외부 검색과 AI 분석은 아직 연결되지 않았습니다. 예약·고객·수동 매출 현황은 실제 저장 데이터입니다.':'시연용 카드이며 외부 검색/AI 수치는 가상입니다.'}</div><div class="notice"><strong>예정 기능</strong><div style="margin-top:6px">재방문 지연 고객 탐색, 상담 키워드 추이, 채널별 마케팅 제안을 한 화면에서 확인합니다.</div></div></section></div></div>`}
+function renderToday(){const active=todayReservations().filter(r=>!['CANCELLED','NO_SHOW'].includes(r.status));const pendingCars=active.filter(r=>!r.parking&&customer(r.cid)?.vehicle).length;const completed=active.filter(r=>r.status==='COMPLETED').length;return header('DASHBOARD','좋은 하루의 시작, '+esc(state.shopConfig?.name||remote.shopName||'우리 매장'),TODAY()+' · 매장 운영 현황',button('＋ 예약 등록','newReservation','primary'))+`<div class="grid4">${stat('오늘 예약',active.length+'건','확정 및 방문 포함')}${stat('관리 완료',completed+'건','완료 버튼으로 갱신')}${stat('고객 수',state.customers.length+'명','등록된 고객 데이터')}${stat('미처리 주차',pendingCars+'건','차량 등록 고객 기준')}</div><div class="layout2"><section class="panel"><div class="panelhead"><h2>오늘의 예약</h2><span class="sectiontag">시간순</span></div>${active.length?active.slice().sort((a,b)=>a.time.localeCompare(b.time)).map(r=>{const c=customer(r.cid);return `<div class="reservation"><div class="rtime">${r.time}<small>${r.minutes}분</small></div><div><p class="rname">${esc(c?.name)} <span class="status ${r.status==='COMPLETED'?'':'warn'}">${statusText[r.status]||r.status}</span></p><div class="rmeta">${esc(r.service)} · ${esc(staffLabel(r.staff))} · ${esc(r.room)}</div></div><button class="btn small" data-res-open="${r.id}">예약 상세 →</button></div>`}).join(''):'<div class="empty">등록된 예약이 없습니다.</div>'}<div style="text-align:right;margin-top:10px">${button('전체 예약 보기 →','goReservations','ghost small')}</div></section><div><section class="panel"><div class="panelhead"><h2>처리할 업무</h2><span class="sectiontag">매장 업무</span></div><div class="minirow"><div class="minidot">✧</div><div class="grow"><strong>상담 AI 검토</strong><span>${serverMode()?'상담 메모를 규칙 기반으로 정리하고 변경사항을 직접 검토하세요':'가상 상담을 분석하고 고객 정보 변경안을 승인해보세요'}</span></div><button data-act="goAI" class="btn small">시작</button></div><div class="minirow"><div class="minidot">🚗</div><div class="grow"><strong>주차 확인 ${pendingCars}건</strong><span>예약 카드에서 차량별 등록을 처리할 수 있어요</span></div><button data-act="goReservations" class="btn small">확인</button></div><div class="minirow"><div class="minidot">◷</div><div class="grow"><strong>잔여 횟수권 점검</strong><span>잔여 1회 고객 및 만료예정 고객 확인</span></div><button data-nav="memberships" class="btn small">보기</button></div></section><section class="panel"><div class="panelhead"><h2>AI 매장 인사이트</h2><span class="sectiontag">시연 카드</span></div><div class="callout">${serverMode()?'외부 검색과 AI 분석은 아직 연결되지 않았습니다. 예약·고객·수동 매출 현황은 실제 저장 데이터입니다.':'시연용 카드이며 외부 검색/AI 수치는 가상입니다.'}</div><div class="notice"><strong>예정 기능</strong><div style="margin-top:6px">재방문 지연 고객 탐색, 상담 키워드 추이, 채널별 마케팅 제안을 한 화면에서 확인합니다.</div></div></section></div></div>`}
 function renderReservations(){
  const data=filteredReservations(),total=data.length,active=data.filter(r=>!['CANCELLED','NO_SHOW'].includes(r.status)).length,weekly=scheduleMode==='week';
  const desc=weekly?`${weekStart(scheduleDate)} ~ ${dateAdd(weekStart(scheduleDate),6)} · ${weekStaff}`:datePretty(scheduleDate);
- const dateBar=`<div class="schedule-toolbar"><div class="schedule-dates"><button class="btn small" data-day="-1" aria-label="이전 ${weekly?'주':'날'}">‹</button><strong>${esc(desc)}</strong><button class="btn small" data-day="1" aria-label="다음 ${weekly?'주':'날'}">›</button><input type="date" class="input schedule-date-input" id="scheduleDateInput" value="${scheduleDate}" aria-label="날짜 선택"><button class="btn small" data-act="scheduleToday">오늘</button></div><div class="schedule-controls"><div class="view-switch" role="group" aria-label="예약 표시 방식"><button class="${scheduleMode==='timetable'?'on':''}" data-schedule-view="timetable">▦ 일간 시간표</button><button class="${scheduleMode==='week'?'on':''}" data-schedule-view="week">▤ 주간 시간표</button><button class="${scheduleMode==='list'?'on':''}" data-schedule-view="list">☷ 목록</button></div>${weekly?`<label class="filter-inline">관리사<select id="scheduleWeekStaff" class="select">${STAFf.map(x=>`<option ${weekStaff===x?'selected':''}>${x}</option>`).join('')}</select></label>`:`<label class="filter-inline">관리사<select id="scheduleStaff" class="select"><option value="ALL">전체</option>${STAFf.map(x=>`<option ${staffFilter===x?'selected':''}>${x}</option>`).join('')}</select></label>`}<label class="filter-inline">상태<select id="scheduleStatus" class="select"><option value="ALL">전체</option>${Object.entries(statusText).map(([code,text])=>`<option value="${code}" ${statusFilter===code?'selected':''}>${text}</option>`).join('')}<option value="ARCHIVED" ${statusFilter==='ARCHIVED'?'selected':''}>삭제 보관함</option></select></label></div></div>`;
+ const dateBar=`<div class="schedule-toolbar"><div class="schedule-dates"><button class="btn small" data-day="-1" aria-label="이전 ${weekly?'주':'날'}">‹</button><strong>${esc(desc)}</strong><button class="btn small" data-day="1" aria-label="다음 ${weekly?'주':'날'}">›</button><input type="date" class="input schedule-date-input" id="scheduleDateInput" value="${scheduleDate}" aria-label="날짜 선택"><button class="btn small" data-act="scheduleToday">오늘</button></div><div class="schedule-controls"><div class="view-switch" role="group" aria-label="예약 표시 방식"><button class="${scheduleMode==='timetable'?'on':''}" data-schedule-view="timetable">▦ 일간 시간표</button><button class="${scheduleMode==='week'?'on':''}" data-schedule-view="week">▤ 주간 시간표</button><button class="${scheduleMode==='list'?'on':''}" data-schedule-view="list">☷ 목록</button></div>${weekly?`<label class="filter-inline">관리사<select id="scheduleWeekStaff" class="select">${STAFf.map(x=>`<option value="${esc(x)}" ${weekStaff===x?'selected':''}>${esc(staffLabel(x))}</option>`).join('')}</select></label>`:`<label class="filter-inline">관리사<select id="scheduleStaff" class="select"><option value="ALL">전체</option>${STAFf.map(x=>`<option value="${esc(x)}" ${staffFilter===x?'selected':''}>${esc(staffLabel(x))}</option>`).join('')}</select></label>`}<label class="filter-inline">상태<select id="scheduleStatus" class="select"><option value="ALL">전체</option>${Object.entries(statusText).map(([code,text])=>`<option value="${code}" ${statusFilter===code?'selected':''}>${text}</option>`).join('')}<option value="ARCHIVED" ${statusFilter==='ARCHIVED'?'selected':''}>삭제 보관함</option></select></label></div></div>`;
  const zoomBar=scheduleMode==='list'?'':`<div class="zoomline"><label for="scheduleZoom">시간표 크기</label><button class="btn small" data-zoom="down" title="더 작게">−</button><input id="scheduleZoom" type="range" min="0" max="8" step="1" value="${ZOOM_LEVELS.indexOf(scheduleZoom)}" aria-label="시간표 크기"><button class="btn small" data-zoom="up" title="더 크게">＋</button><button class="btn small" data-zoom="fit">하루 한눈에</button>${weekly?`<button class="btn small" data-week-fit>${weekFit?'주간 확대':'주간 한눈에'}</button>`:''}<span class="muted">${scheduleZoom<=.22?'초압축':scheduleZoom<=.42?'압축':scheduleZoom<=.75?'보통':'확대'} · 09:00–21:00</span></div>`;
  return header('SCHEDULE','예약 관리','시간표 드래그·길이 조절 · 상태 복구 · 삭제 보관함 · 관리사별 주간 보기',button('＋ 예약 등록','newReservation','primary'))+`<section class="panel schedule-panel">${dateBar}${zoomBar}<div class="schedule-summary"><b>${total}건</b> 조회 · 진행 중/완료 <b>${active}건</b><span>${weekly?'7일을 한 화면에서 비교 · 가로 스와이프 가능': '시간표와 목록은 같은 예약 데이터를 사용합니다.'}</span></div>${scheduleMode==='list'?renderReservationList(data):renderTimetable(data,weekly)}<div class="demo-tip">예약을 <b>누르면 상세/상태/삭제</b>, <b>끌면 시간·관리사·요일 이동</b>, 카드 하단 <b>↕ 핸들로 길이 변경</b>이 가능해요. 수정은 확인 후 적용되며 충돌 예약은 차단됩니다. 삭제는 보관함에서 복원 가능합니다.</div></section>`;
 }
@@ -80,12 +81,12 @@ function renderTimetable(data,weekly){
  const cols=weekly?(weekFit?'minmax(0,1fr)':'minmax(106px,1fr)'):'minmax(0,1fr)';
  const blocks=lane=>data.filter(r=>r.date===lane.date&&r.staff===lane.staff).map(r=>{const c=customer(r.cid),top=(asMinutes(r.time)-SLOT_START)*ppm,h=r.minutes*ppm-2;if(top<0||top>=full)return '';const compact=h<40;return `<div class="time-res ${statusKind(r.status)} ${compact?'is-compact':''} ${r.archived?'is-archived':''}" data-booking="${esc(r.id)}" style="top:${top}px;height:${Math.max(5,h)}px" title="${esc(c?.name||'고객')} ${esc(r.time)} ${esc(r.service)}" tabindex="0" role="button" aria-label="${esc(c?.name||'고객')} ${esc(r.time)} 예약 상세"><div class="booking-inner"><b>${esc(r.time)} ${esc(c?.name||'고객')}</b>${h>31?`<span>${esc(r.service)}</span>`:''}${h>69?`<small>${esc(r.room)} · ${esc(statusText[r.status])}</small>`:''}</div><span class="card-more" aria-hidden="true">⋯</span><span class="resize-grip" data-resize="${esc(r.id)}" title="끌어서 예약 시간 늘리기/줄이기">↕</span></div>`}).join('');
  const bg=`background-size:100% ${60*ppm}px`;
- return `<div class="timetable-scroll" role="region" aria-label="${weekly?'관리사별 주간':'관리사별 일간'} 예약 시간표" tabindex="0"><div class="timetable ${weekly?'weekly':''} ${weekly&&weekFit?'fit-week':''}" style="grid-template-columns:54px repeat(${lanes.length},${cols});min-width:${weekly?(weekFit?'0':'975px'):'0'}"><div class="lane-head time-title">시간</div>${lanes.map(l=>`<div class="lane-head">${weekly&&weekFit?`<span class="week-mini"><b>${l.date.slice(-2)}</b><small>${weekdayShort(l.date)}</small></span>`:esc(l.label)}</div>`).join('')}<div class="schedule-times" style="height:${full}px;${bg}">${marks}</div>${lanes.map(l=>{const cells=Array.from({length:24},(_,i)=>{const m=SLOT_START+i*30;return `<button class="slot" style="top:${i*half}px;height:${half}px" data-new-at="${toHHMM(m)}" data-new-staff="${esc(l.staff)}" data-new-date="${l.date}" title="새 예약 ${toHHMM(m)}"></button>`}).join('');return `<div class="schedule-lane" data-lane-date="${l.date}" data-lane-staff="${esc(l.staff)}" style="height:${full}px;${bg}">${cells}${blocks(l)}</div>`}).join('')}</div></div>`;
+ return `<div class="timetable-scroll" role="region" aria-label="${weekly?'관리사별 주간':'관리사별 일간'} 예약 시간표" tabindex="0"><div class="timetable ${weekly?'weekly':''} ${weekly&&weekFit?'fit-week':''}" style="grid-template-columns:54px repeat(${lanes.length},${cols});min-width:${weekly?(weekFit?'0':'975px'):'0'}"><div class="lane-head time-title">시간</div>${lanes.map(l=>`<div class="lane-head">${weekly&&weekFit?`<span class="week-mini"><b>${l.date.slice(-2)}</b><small>${weekdayShort(l.date)}</small></span>`:esc(staffLabel(l.label))}</div>`).join('')}<div class="schedule-times" style="height:${full}px;${bg}">${marks}</div>${lanes.map(l=>{const cells=Array.from({length:24},(_,i)=>{const m=SLOT_START+i*30;return `<button class="slot" style="top:${i*half}px;height:${half}px" data-new-at="${toHHMM(m)}" data-new-staff="${esc(l.staff)}" data-new-date="${l.date}" title="새 예약 ${toHHMM(m)}"></button>`}).join('');return `<div class="schedule-lane" data-lane-date="${l.date}" data-lane-staff="${esc(l.staff)}" style="height:${full}px;${bg}">${cells}${blocks(l)}</div>`}).join('')}</div></div>`;
 }
 function renderReservationList(data){
  if(!data.length)return `<div class="empty">해당 조건에 예약이 없습니다.<p>${button('예약 등록','newReservation','primary small')}</p></div>`;
  const rows=data.map(r=>{const c=customer(r.cid);return `<tr><td><b>${esc(r.date.slice(5))} ${esc(r.time)}</b><br><span class="muted">${r.minutes}분</span></td><td><button class="btn ghost small" data-customer="${r.cid}">${esc(c?.name)} →</button></td><td>${esc(r.service)}</td><td>${esc(r.staff)}<br><span class="muted">${esc(r.room)}</span></td><td><span class="status ${statusKind(r.status)}">${r.archived?'보관됨':statusText[r.status]||r.status}</span></td><td>${c?.vehicle?(r.parking?'<span class="status is-done">완료</span>':'<span class="status">미처리</span>'):'<span class="muted">해당 없음</span>'}</td><td><button class="btn small" data-res-open="${r.id}">상세·편집</button></td></tr>`}).join('');
- const cards=data.map(r=>{const c=customer(r.cid);return `<article class="reservation-list-card"><div class="list-card-head"><strong>${esc(r.date.slice(5))} ${esc(r.time)} <span class="muted">· ${r.minutes}분</span></strong><span class="status ${statusKind(r.status)}">${r.archived?'보관됨':statusText[r.status]||r.status}</span></div><h3>${esc(c?.name||'고객')} <small>${esc(r.service)}</small></h3><div class="rmeta">${esc(r.staff)} · ${esc(r.room)} · 주차 ${c?.vehicle?(r.parking?'완료':'미처리'):'해당 없음'}</div><div class="list-actions"><button class="btn small" data-customer="${r.cid}">고객카드</button><button class="btn small primary" data-res-open="${r.id}">상세·편집</button></div></article>`}).join('');
+ const cards=data.map(r=>{const c=customer(r.cid);return `<article class="reservation-list-card"><div class="list-card-head"><strong>${esc(r.date.slice(5))} ${esc(r.time)} <span class="muted">· ${r.minutes}분</span></strong><span class="status ${statusKind(r.status)}">${r.archived?'보관됨':statusText[r.status]||r.status}</span></div><h3>${esc(c?.name||'고객')} <small>${esc(r.service)}</small></h3><div class="rmeta">${esc(staffLabel(r.staff))} · ${esc(r.room)} · 주차 ${c?.vehicle?(r.parking?'완료':'미처리'):'해당 없음'}</div><div class="list-actions"><button class="btn small" data-customer="${r.cid}">고객카드</button><button class="btn small primary" data-res-open="${r.id}">상세·편집</button></div></article>`}).join('');
  return `<div class="schedule-table"><table class="table"><thead><tr><th>예약일시</th><th>고객</th><th>프로그램</th><th>담당/공간</th><th>상태</th><th>주차</th><th>업무</th></tr></thead><tbody>${rows}</tbody></table></div><div class="schedule-mobile-list">${cards}</div>`;
 }
 function renderCustomers(){const c=customer(selectedCustomer)||state.customers[0];if(!c)return header('CUSTOMER 360','고객 관리','고객을 등록하면 이곳에서 통합 관리할 수 있습니다.',button('＋ 고객 등록','newCustomer','primary'));
@@ -104,7 +105,7 @@ function renderCustomerTab(c){
  const skin=`<div class="c360-box"><h3 class="c360-subtitle">현재 피부 프로필 <span class="status">직원 확인 기준</span></h3><div class="c360-fact"><label>피부 유형</label><strong>${esc(c.type)}</strong></div><div class="c360-fact"><label>관리 강도 선호</label><strong>${esc(c.pressure)}</strong></div><div class="c360-fact"><label>고민</label><div class="chips" style="justify-content:end;margin:0">${(c.concerns.length?c.concerns:['미등록']).map(x=>`<span class="chip">${esc(x)}</span>`).join('')}</div></div><div class="c360-fact"><label>주의사항</label><div class="chips" style="justify-content:end;margin:0">${(c.precautions.length?c.precautions:['기록 없음']).map(x=>`<span class="chip">${esc(x)}</span>`).join('')}</div></div>${c.precautions.length?'<div class="c360-alert">⚠ 관리 전 주의사항을 반드시 확인하세요. AI 추출사항은 직원 승인 후에만 고객 정보에 반영됩니다.</div>':''}</div>`;
  const timeline=(items,empty='기록 없음')=>items.length?items.map(x=>`<div class="c360-event"><time>${esc(x.date)}</time><div><b>${esc(x.label)}</b><p>${esc(x.note)}</p>${x.kind?`<span class="status">${esc(x.kind)}</span>`:''}</div></div>`).join(''):`<div class="empty">${empty}</div>`;
  switch(customerTab){
- case 'overview':return `<div class="c360-overview"><div class="c360-stack">${skin}<div class="c360-box"><h3 class="c360-subtitle">최근 상담 <button class="btn small" data-custtab="consult">모두 보기 →</button></h3>${consultations.length?`<div class="c360-muted">${esc(consultations[0].date)} · ${consultations[0].status==='APPROVED'?'확정':'임시저장'} ${consultations[0].source==='SAMPLE'?'· 가상 예시':''}</div><p class="c360-note">${esc(consultations[0].note)}</p>`:'<div class="empty">아직 상담일지가 없습니다.</div>'}</div><div class="c360-box"><h3 class="c360-subtitle">최근 변경/방문</h3>${timeline(events.slice(0,4))}</div></div><div class="c360-stack"><div class="c360-box"><h3 class="c360-subtitle">다음 예약 <button class="btn small" data-act="rebookCustomer">＋ 예약</button></h3>${appts.filter(x=>x.date>=TODAY()&&!['COMPLETED'].includes(x.status)).slice().sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).slice(0,1).map(r=>`<div><b>${esc(r.date)} ${esc(r.time)}</b><p class="subtle">${esc(r.service)} · ${esc(r.staff)}</p><button class="btn small" data-res-open="${esc(r.id)}">예약 상세 →</button></div>`).join('')||'<div class="empty">예정된 예약이 없습니다.</div>'}</div><div class="c360-box"><h3 class="c360-subtitle">회원권 현황</h3>${c.membership?`<b>${esc(c.membership.name)}</b><div class="progress"><div class="bar" style="width:${Math.min(100,100*c.membership.used/c.membership.total)}%"></div></div><p class="subtle">${c.membership.used}/${c.membership.total}회 사용 · 잔여 <b>${c.membership.total-c.membership.used}회</b></p><p class="c360-muted">만료: ${esc(c.membership.expire)}</p>`:'<div class="empty">회원권 없음</div>'}</div><div class="c360-box"><h3 class="c360-subtitle">후속 업무</h3>${pending.length?pending.map(f=>`<div class="c360-fact"><div><b>${esc(f.title)}</b><div class="c360-muted">진행 대기</div></div><button class="btn small" data-complete-followup="${esc(f.id)}">완료 처리</button></div>`).join(''):'<p class="c360-muted">처리 대기 중인 업무가 없습니다.</p>'}</div><div class="c360-box"><h3 class="c360-subtitle">주차·차량</h3><div class="c360-fact"><label>차량번호</label><strong>${esc(c.vehicle||'등록 안 됨')}</strong></div><p class="c360-muted">주차 등록은 예약 건별로 따로 관리합니다.</p></div></div></div>`;
+ case 'overview':return `<div class="c360-overview"><div class="c360-stack">${skin}<div class="c360-box"><h3 class="c360-subtitle">최근 상담 <button class="btn small" data-custtab="consult">모두 보기 →</button></h3>${consultations.length?`<div class="c360-muted">${esc(consultations[0].date)} · ${consultations[0].status==='APPROVED'?'확정':'임시저장'} ${consultations[0].source==='SAMPLE'?'· 가상 예시':''}</div><p class="c360-note">${esc(consultations[0].note)}</p>`:'<div class="empty">아직 상담일지가 없습니다.</div>'}</div><div class="c360-box"><h3 class="c360-subtitle">최근 변경/방문</h3>${timeline(events.slice(0,4))}</div></div><div class="c360-stack"><div class="c360-box"><h3 class="c360-subtitle">다음 예약 <button class="btn small" data-act="rebookCustomer">＋ 예약</button></h3>${appts.filter(x=>x.date>=TODAY()&&!['COMPLETED'].includes(x.status)).slice().sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).slice(0,1).map(r=>`<div><b>${esc(r.date)} ${esc(r.time)}</b><p class="subtle">${esc(r.service)} · ${esc(staffLabel(r.staff))}</p><button class="btn small" data-res-open="${esc(r.id)}">예약 상세 →</button></div>`).join('')||'<div class="empty">예정된 예약이 없습니다.</div>'}</div><div class="c360-box"><h3 class="c360-subtitle">회원권 현황</h3>${c.membership?`<b>${esc(c.membership.name)}</b><div class="progress"><div class="bar" style="width:${Math.min(100,100*c.membership.used/c.membership.total)}%"></div></div><p class="subtle">${c.membership.used}/${c.membership.total}회 사용 · 잔여 <b>${c.membership.total-c.membership.used}회</b></p><p class="c360-muted">만료: ${esc(c.membership.expire)}</p>`:'<div class="empty">회원권 없음</div>'}</div><div class="c360-box"><h3 class="c360-subtitle">후속 업무</h3>${pending.length?pending.map(f=>`<div class="c360-fact"><div><b>${esc(f.title)}</b><div class="c360-muted">진행 대기</div></div><button class="btn small" data-complete-followup="${esc(f.id)}">완료 처리</button></div>`).join(''):'<p class="c360-muted">처리 대기 중인 업무가 없습니다.</p>'}</div><div class="c360-box"><h3 class="c360-subtitle">주차·차량</h3><div class="c360-fact"><label>차량번호</label><strong>${esc(c.vehicle||'등록 안 됨')}</strong></div><p class="c360-muted">주차 등록은 예약 건별로 따로 관리합니다.</p></div></div></div>`;
  case 'consult':return `<div class="c360-subtitle">상담일지 <div>${button('＋ 새 상담','goCustomerAI','primary small')}</div></div><div class="callout">상담 원문과 직원 승인 내역을 분리해 저장합니다. ${serverMode()?'현재 AI 모델은 미연결이며 상담분석은 규칙 기반 참고안입니다.':'예시 기록은 가상 데이터입니다.'}</div>${consultations.length?consultations.map(x=>`<article class="c360-box" style="margin-top:12px"><div class="c360-inline" style="justify-content:space-between"><b>${esc(x.date)} 상담</b><span class="status ${x.status==='APPROVED'?'':'warn'}">${x.status==='APPROVED'?'확정':'임시저장'}</span></div><p class="c360-note">${esc(x.note)}</p><div class="c360-muted">${x.source==='SAMPLE'?'가상 과거 상담 예시 · ':''}변경 반영 ${Number(x.appliedChanges)||0}건</div><details style="margin-top:11px"><summary style="cursor:pointer;font-size:12px;color:var(--green)">상담 원문 보기</summary><p class="ai-readonly">${esc(x.transcript||'원문 없음')}</p></details></article>`).join(''):'<div class="empty">상담일지가 아직 없습니다.<br>새 상담을 입력하고 시뮬레이션을 실행해보세요.</div>'}<div class="c360-box" style="margin-top:14px"><h3 class="c360-subtitle">승인된 고객정보 변경 내역</h3>${timeline(c.events.slice().reverse().map(e=>({date:e.date,label:e.label,note:e.evidence,kind:'승인'})),'프로필 변경 승인 내역이 없습니다.')}</div>`;
   case 'treatment':{const txs=state.treatments.filter(x=>x.cid===c.id&&!x.voided).slice().reverse();return `<div class="c360-subtitle">관리이력 <span class="c360-muted">관리기록 / 제품 / 강도 / 결과</span></div>${txs.map(x=>`<div class="c360-box" style="margin-bottom:13px"><div class="c360-inline" style="justify-content:space-between"><b>${esc(x.date)} · ${esc(x.service)}</b><button class="btn small" data-res-open="${esc(x.reservationId)}">예약 보기</button></div><div class="c360-fact"><label>관리사</label><strong>${esc(x.staff)}</strong></div><div class="c360-fact"><label>관리 전</label><strong>${esc(x.before||'기록 없음')}</strong></div><div class="c360-fact"><label>관리 후</label><strong>${esc(x.after||'기록 없음')}</strong></div><div class="c360-fact"><label>제품 / 기기</label><strong>${esc([x.products,x.device].filter(Boolean).join(' / ')||'미입력')}</strong></div><div class="c360-fact"><label>압/강도</label><strong>${esc(x.pressure)}</strong></div><p class="c360-note">${esc(x.note||'메모 없음')}</p></div>`).join('')}${c.history.filter(h=>!h.reservationId||!txs.some(x=>x.reservationId===h.reservationId)).slice().reverse().map(h=>`<div class="c360-box" style="margin-bottom:11px"><b>${esc(h.date)} · ${esc(h.label)}</b><p class="subtle">${esc(h.note)}</p></div>`).join('')}${!txs.length&&!c.history.length?'<div class="empty">등록된 관리기록이 없습니다.</div>':''}<div class="fake">사진은 별도 탭에서 관리합니다. 제품 재고의 관리완료 자동 차감은 추후 검증 항목입니다.</div>`;}
  case 'photo':{const pics=(state.photos||[]).filter(p=>p.cid===c.id);return `<div class="c360-subtitle">피부관리 전후 사진 <span class="c360-muted">사진 동의 · 날짜별 비교</span></div><div class="c360-box"><div class="c360-inline" style="justify-content:space-between"><b>등록된 사진 ${pics.length}장</b>${xbutton('＋ 사진 등록','photoNew',c.id,'small primary')}</div>${pics.length?`<div class="photogrid">${pics.map(p=>`<button class="photo-tile" data-extra="photoPreview" data-id="${p.id}"><img src="${esc(p.dataUrl)}" alt="${esc(p.kind)} ${esc(p.date)}"><small>${esc(p.kind)} · ${p.date}</small></button>`).join('')}</div>`:'<div class="empty">사진이 없습니다. 동의 확인 후 샘플 이미지를 등록해 비교해보세요.</div>'}</div><div class="c360-box" style="margin-top:13px"><h3>BEFORE / AFTER 비교</h3>${pics.length>=2?`<div class="photo-compare"><select id="photoBefore" class="select">${pics.map(p=>`<option value="${p.id}" ${p.kind==='BEFORE'?'selected':''}>${p.date} ${p.kind}</option>`).join('')}</select><select id="photoAfter" class="select">${pics.map(p=>`<option value="${p.id}" ${p.kind==='AFTER'?'selected':''}>${p.date} ${p.kind}</option>`).join('')}</select>${xbutton('비교 열기','photoCompare',c.id,'small')}</div>`:'<p class="fineprint">서로 다른 두 사진을 등록하면 비교할 수 있습니다.</p>'}</div><p class="fineprint">${serverMode()?'사진은 비공개 저장소에 보관하며, 로그인한 매장 계정만 임시 링크를 발급받습니다. 개인정보 보관·삭제 정책을 확인하세요.':'사진은 데모용 브라우저 저장 상태입니다. 실고객 사진을 넣지 마세요.'}</p>`;}
@@ -153,7 +154,7 @@ function changeStatus(id,status){const r=state.reservations.find(x=>x.id===id);i
 function openReservationDetail(id){const r=state.reservations.find(x=>x.id===id);if(!r)return;const c=customer(r.cid);
  const treatment=state.treatments.find(x=>x.reservationId===id&&!x.voided);
  const actionRow=r.archived?`<button class="btn primary" data-res-action="restore" data-res-id="${id}">보관함에서 복원</button>`:`<button class="btn" data-res-action="edit" data-res-id="${id}">✎ 예약 편집</button>${r.status!=='COMPLETED'?`<button class="btn primary" data-res-action="complete" data-res-id="${id}">관리 완료 입력</button>`:`<button class="btn" data-res-action="rebook" data-res-id="${id}">＋ 다음 예약</button>`}<button class="btn" data-res-action="parking" data-res-id="${id}">주차 ${r.parking?'완료':'처리'}</button><button class="btn danger" data-res-action="archive" data-res-id="${id}">삭제·보관</button>`;
- openModal(`<div class="detail-label">예약 상세 <span class="status ${statusKind(r.status)}">${r.archived?'보관됨':statusText[r.status]}</span></div><h2>${esc(c?.name||'고객')}</h2><div class="detail-row"><b>일시</b><span>${r.date} ${r.time} · ${r.minutes}분</span></div><div class="detail-row"><b>프로그램</b><span>${esc(r.service)}</span></div><div class="detail-row"><b>담당/공간</b><span>${esc(r.staff)} · ${esc(r.room)}</span></div><div class="detail-row"><b>주의사항</b><span>${esc(c?.precautions.join(', ')||'없음')}</span></div><div class="detail-row"><b>횟수권 잔여</b><span>${c?.membership?`${c.membership.total-c.membership.used}회`:'회원권 없음'}</span></div><div class="detail-row"><b>차량/주차</b><span>${esc(c?.vehicle||'차량 없음')} · ${r.parking?'완료':'미처리'}</span></div>${treatment?`<div class="msgbox" style="margin-top:12px">관리 기록: ${esc(treatment.note||'별도 메모 없음')}
+ openModal(`<div class="detail-label">예약 상세 <span class="status ${statusKind(r.status)}">${r.archived?'보관됨':statusText[r.status]}</span></div><h2>${esc(c?.name||'고객')}</h2><div class="detail-row"><b>일시</b><span>${r.date} ${r.time} · ${r.minutes}분</span></div><div class="detail-row"><b>프로그램</b><span>${esc(r.service)}</span></div><div class="detail-row"><b>담당/공간</b><span>${esc(staffLabel(r.staff))} · ${esc(r.room)}</span></div><div class="detail-row"><b>주의사항</b><span>${esc(c?.precautions.join(', ')||'없음')}</span></div><div class="detail-row"><b>횟수권 잔여</b><span>${c?.membership?`${c.membership.total-c.membership.used}회`:'회원권 없음'}</span></div><div class="detail-row"><b>차량/주차</b><span>${esc(c?.vehicle||'차량 없음')} · ${r.parking?'완료':'미처리'}</span></div>${treatment?`<div class="msgbox" style="margin-top:12px">관리 기록: ${esc(treatment.note||'별도 메모 없음')}
 제품: ${esc(treatment.products||'미입력')} · 관리 압: ${esc(treatment.pressure||'미입력')}</div>`:''}<div class="field" style="margin-top:18px"><label for="resStatusUpdate">예약 상태 · 노쇼 이후에도 수정 가능</label><div class="inline-action"><select class="select" id="resStatusUpdate" ${r.archived?'disabled':''}>${Object.entries(statusText).map(([value,label])=>`<option value="${value}" ${r.status===value?'selected':''}>${label}</option>`).join('')}</select><button class="btn" data-res-action="set-status" data-res-id="${id}" ${r.archived?'disabled':''}>상태 적용</button></div></div><div class="detail-actions"><button class="btn small" data-customer="${r.cid}">고객카드</button>${!r.archived&&r.status==='CONFIRMED'?`<button class="btn small" data-res-action="arrive" data-res-id="${id}">방문 접수</button><button class="btn small" data-res-action="no-show" data-res-id="${id}">노쇼</button>`:''}${actionRow}</div><p class="fake">삭제는 보관 처리이며, 보관함에서 복원할 수 있습니다. 실제 알림톡/주차 등록은 전송되지 않습니다.</p>`);
 }
 function reservationAction(kind,id){const r=state.reservations.find(x=>x.id===id);if(!r)return;
@@ -234,7 +235,7 @@ function applyProposals(){if(!analysisResult)return;syncAnalysisFields();const p
  for(const u of changes){if(u.type==='concern'&&!c.concerns.includes(u.value))c.concerns.push(u.value);else if(u.type==='pressure')c.pressure=u.value;else if(u.type==='precaution'&&!c.precautions.includes(u.value))c.precautions.push(u.value);else if(u.type==='followup')state.followups.push({id:'F'+Date.now()+'-'+state.followups.length,cid:c.id,title:u.value,status:'OPEN',consultationId:rec.id});c.events.push({date:TODAY(),label:u.title+': '+u.value,evidence:u.evidence,consultationId:rec.id,reviewMemo:p.reviewMemo});}
  state.audits.push({action:'CONSULTATION_APPROVED',cid:c.id,consultation:rec.id,count:changes.length,date:TODAY()});analysisResult=null;selectedCustomer=c.id;customerTab='consult';customerMobileDetail=true;save();setView('customers');toast(`상담일지 확정 · 고객정보 ${changes.length}건 반영`);}
 
-function act(action){switch(action){case 'newReservation':newReservation();break;case 'scheduleToday':scheduleDate=TODAY();render();break;case 'newCustomer':newCustomer();break;case 'goReservations':setView('reservations');break;case 'goAI':activeConsultCid=selectedCustomer;analysisResult=null;setView('ai');break;case 'goCustomerAI':activeConsultCid=selectedCustomer;analysisResult=null;setView('ai');break;case 'rebookCustomer':newReservation({cid:selectedCustomer});break;case 'analyze':analyze();break;case 'applyProposals':applyProposals();break;case 'saveConsultDraft':saveConsultationDraft();break;case 'clearProposals':analysisResult=null;render();break;case 'saveCustomer':saveCustomer();break;case 'saveReservation':saveReservation();break;case 'saveTreatment':saveTreatment();break;case 'confirmScheduleDrop':confirmScheduleDrop();break;case 'saveMessageDraft':saveMessageDraft();break;case 'newNextReservation':newNextReservation();break;case 'closeModal':closeModal();dragIntent=null;break;case 'resetDemo':if(serverMode())break;if(confirm('가상 데이터와 데모 변경내역을 초기화할까요?')){state=seed();save();scheduleDate=TODAY();scheduleMode='timetable';staffFilter='ALL';statusFilter='ALL';weekStaff='김원장';scheduleZoom=.30;selectedCustomer='C001';customerTab='overview';analysisResult=null;customerMobileDetail=false;ensureDemoState();ensureExtendedState();closeModal();setView('today');toast('초기화했습니다.')}break}}
+function act(action){switch(action){case 'newReservation':newReservation();break;case 'scheduleToday':scheduleDate=TODAY();render();break;case 'newCustomer':newCustomer();break;case 'goReservations':setView('reservations');break;case 'goAI':activeConsultCid=selectedCustomer;analysisResult=null;setView('ai');break;case 'goCustomerAI':activeConsultCid=selectedCustomer;analysisResult=null;setView('ai');break;case 'rebookCustomer':newReservation({cid:selectedCustomer});break;case 'analyze':analyze();break;case 'applyProposals':applyProposals();break;case 'saveConsultDraft':saveConsultationDraft();break;case 'clearProposals':analysisResult=null;render();break;case 'saveCustomer':saveCustomer();break;case 'saveReservation':saveReservation();break;case 'saveTreatment':saveTreatment();break;case 'confirmScheduleDrop':confirmScheduleDrop();break;case 'saveMessageDraft':saveMessageDraft();break;case 'newNextReservation':newNextReservation();break;case 'closeModal':closeModal();dragIntent=null;break;case 'resetDemo':if(serverMode())break;if(confirm('가상 데이터와 데모 변경내역을 초기화할까요?')){state=seed();save();scheduleDate=TODAY();scheduleMode='timetable';staffFilter='ALL';statusFilter='ALL';weekStaff='미지정';scheduleZoom=.30;selectedCustomer='C001';customerTab='overview';analysisResult=null;customerMobileDetail=false;ensureDemoState();ensureExtendedState();closeModal();setView('today');toast('초기화했습니다.')}break}}
 // v0.6 - Shop operations, marketing workbench and consent-aware prototypes.
 // All channel sends are SIMULATED. No external result is displayed as real.
 let operationTab='waitlist', marketingTab='overview';
@@ -245,7 +246,7 @@ const options=(list,selected)=>list.map(v=>`<option value="${esc(v)}" ${v===sele
 const ct=x=>customer(x.cid)?.name||'알 수 없음';
 function ensureExtendedState(){
   state.photos ||= [];state.waitlist ||= [];state.inventory ||= (serverMode()?[]:[{id:'P1',name:'수분 앰플',stock:14,min:5,unit:'개',cost:12000},{id:'P2',name:'진정 팩',stock:6,min:8,unit:'개',cost:4500}]);
-  state.staffNames ||= (serverMode()?['원장']:['김원장','이관리사']);STAFf.splice(0,STAFf.length,...state.staffNames);state.rooms ||= (serverMode()?['관리실 A']:['관리실 A','관리실 B']);
+  state.staffNames ||= (serverMode()?[]:['김원장','이관리사']);STAFf.splice(0,STAFf.length,...(state.staffNames.length?state.staffNames:['미지정']));state.rooms ||= (serverMode()?['관리실 A']:['관리실 A','관리실 B']);
   state.staffShifts ||= [];state.consents ||= [];state.intakeForms ||= [];state.hygieneTasks ||= [];
   state.shopTasks ||= [];state.snapshots ||= [];state.campaigns ||= [];state.messageQueue ||= [];
   state.services ||= (serverMode()?[]:[{id:'S1',name:'수분 집중관리',minutes:90,price:120000},{id:'S2',name:'진정 집중관리',minutes:90,price:100000},{id:'S3',name:'탄력 집중관리',minutes:60,price:140000},{id:'S4',name:'신규 상담 + 피부관리',minutes:60,price:90000}]);
@@ -305,7 +306,7 @@ function renderCampaigns(){return pane('캠페인',`<div class="liststack">${sta
 function renderAnalytics(){const p=state.payments.filter(x=>!x.voided),gross=p.reduce((a,x)=>a+(Number(x.amount)||0),0),tc=state.treatments.filter(x=>!x.voided),no=state.reservations.filter(x=>x.status==='NO_SHOW'&&!x.archived).length,all=state.reservations.filter(x=>!x.archived),r=state.reservations.filter(x=>!x.archived&&x.status==='COMPLETED');const staff=STAFf.map(s=>({name:s,count:tc.filter(x=>x.staff===s).length,amount:p.filter(y=>state.reservations.find(x=>x.id===y.reservationId)?.staff===s).reduce((a,y)=>a+y.amount,0)}));
 return header('ANALYTICS','매출·운영 분석',serverMode()?'입력된 결제 내역 기준 · 실제 매장 저장 데이터':'입력된 결제 내역 기준 · 시연용 가상 데이터 포함')+`<div class="grid4">${stat('결제 입력 합계',won(gross),'환불·취소 처리 제외')}${stat('완료한 관리',r.length+'건','관리기록 확정')}${stat('노쇼 비중',all.length?Math.round(no/all.length*100)+'%':'0%','예약 상태 기준')}${stat('방문 이력 보유',state.customers.filter(x=>x.last).length+'명','고객 수 중')}</div>`+pane('관리사별 실적',`<div class="liststack">${staff.map(x=>rowAction(esc(x.name),`관리 ${x.count}건 · 입력된 결제 매출 ${won(x.amount)}`)).join('')}</div>`)+pane('최근 결제 및 취소',`<div class="liststack">${state.payments.slice().reverse().slice(0,12).map(x=>rowAction(`${esc(customer(x.cid)?.name)} · ${won(x.amount)}`,`${x.date||''} · ${x.type} · ${x.voided?'취소됨':'유효'}`,x.voided?'':xbutton('결제 취소','paymentVoid',x.id))).join('')||'<div class="empty">결제 기록이 없습니다.</div>'}</div><div style="margin-top:12px">${xbutton('＋ 결제 직접 입력','paymentNew','', 'primary')}</div>`);
 }
-function renderSettings(){return header('SETTINGS','매장·시스템 설정','서비스·영업정책·백업·연동 준비')+pane('매장 정보 / 예약 정책',`<div class="twocol"><div class="info"><label>매장</label><strong>${esc(state.shopConfig.name)}</strong></div><div class="info"><label>주차 기본 지원</label><strong>${state.shopConfig.parkingMinutes}분</strong></div><div class="info"><label>취소 안내 기준</label><strong>${state.shopConfig.cancelHours}시간 전</strong></div><div class="info"><label>연동</label><strong>${serverMode()?'Supabase 연결 · 외부 AI/메시징 미연결':'로컬 시연'}</strong></div></div><div style="margin-top:12px">${xbutton('매장 정책 수정','configEdit','', 'primary')} ${xbutton('＋ 관리실/베드 추가','roomNew','', 'small')}</div><div class="fineprint">관리실/베드: ${state.rooms.map(esc).join(', ')}</div>`)+pane('관리 프로그램',`<div class="liststack">${state.services.map(s=>rowAction(esc(s.name),`${s.minutes}분 · ${won(s.price)}`,xbutton('수정','serviceEdit',s.id))).join('')}</div><div style="margin-top:12px">${xbutton('＋ 프로그램 추가','serviceAdd','', 'primary')}</div>`)+pane('데이터 백업·복구',`<p class="fineprint">${serverMode()?'매장 데이터는 Supabase 서버에 저장됩니다. JSON 내보내기 파일은 고객 개인정보를 포함할 수 있으므로 안전하게 보관하세요. 무료 플랜에는 자동 백업이 없습니다.':'브라우저에만 저장하는 시연입니다.'}</p>${xbutton('JSON 백업 내보내기','backupExport')} ${xbutton('JSON 백업 불러오기','backupImport')} ${serverMode()?'':button('가상 데이터 초기화','resetDemo','danger small')}<input type="file" id="backupFile" accept="application/json,.json" style="display:none">`)+pane('서버·AI 통합',`<div class="callout">LLM/STT/Search/Messaging Provider 자격증명은 <b>API 서버 환경변수</b>에만 보관합니다. 브라우저에 비밀키를 넣지 마세요.</div><p class="fineprint">서버 연결은 Supabase Auth와 RLS를 사용합니다. LLM/STT는 다음 단계에서 별도 비밀키를 서버 측에 설정합니다.</p>`);
+function renderSettings(){return header('SETTINGS','매장·시스템 설정','매장 브랜드 · 직원 · 로그인 계정 · 권한 설정')+renderStaffManagement()+pane('매장 정보 / 예약 정책',`<div class="twocol"><div class="info"><label>매장</label><strong>${esc(state.shopConfig.name)}</strong></div><div class="info"><label>주차 기본 지원</label><strong>${state.shopConfig.parkingMinutes}분</strong></div><div class="info"><label>취소 안내 기준</label><strong>${state.shopConfig.cancelHours}시간 전</strong></div><div class="info"><label>연동</label><strong>${serverMode()?'Supabase 연결 · 외부 AI/메시징 미연결':'로컬 시연'}</strong></div></div><div style="margin-top:12px">${xbutton('매장 정책 수정','configEdit','', 'primary')} ${xbutton('＋ 관리실/베드 추가','roomNew','', 'small')}</div><div class="fineprint">관리실/베드: ${state.rooms.map(esc).join(', ')}</div>`)+pane('관리 프로그램',`<div class="liststack">${state.services.map(s=>rowAction(esc(s.name),`${s.minutes}분 · ${won(s.price)}`,xbutton('수정','serviceEdit',s.id))).join('')}</div><div style="margin-top:12px">${xbutton('＋ 프로그램 추가','serviceAdd','', 'primary')}</div>`)+pane('데이터 백업·복구',`<p class="fineprint">${serverMode()?'매장 데이터는 Supabase 서버에 저장됩니다. JSON 내보내기 파일은 고객 개인정보를 포함할 수 있으므로 안전하게 보관하세요. 무료 플랜에는 자동 백업이 없습니다.':'브라우저에만 저장하는 시연입니다.'}</p>${xbutton('JSON 백업 내보내기','backupExport')} ${xbutton('JSON 백업 불러오기','backupImport')} ${serverMode()?'':button('가상 데이터 초기화','resetDemo','danger small')}<input type="file" id="backupFile" accept="application/json,.json" style="display:none">`)+pane('서버·AI 통합',`<div class="callout">LLM/STT/Search/Messaging Provider 자격증명은 <b>API 서버 환경변수</b>에만 보관합니다. 브라우저에 비밀키를 넣지 마세요.</div><p class="fineprint">서버 연결은 Supabase Auth와 RLS를 사용합니다. LLM/STT는 다음 단계에서 별도 비밀키를 서버 측에 설정합니다.</p>`);
 }
 function shiftConflict(candidate){return state.staffShifts.filter(s=>s.type==='OFF'&&s.staff===candidate.staff&&s.date===candidate.date).map(s=>({...s,time:'휴무',staff:s.staff}))[0]}
 // Shortcut: staff holiday conflicts included on reservation creation and drag / restore.
@@ -338,9 +339,139 @@ function showPhoto(cid){if(!consentCheck(cid,'photoConsent'))return;window._phot
 function comparePhotos(cid){const ids=[formValue('photoBefore'),formValue('photoAfter')],images=ids.map(id=>state.photos.find(x=>x.id===id));if(images.some(x=>!x)||ids[0]===ids[1])return toast('서로 다른 두 사진을 선택하세요.');openModal(`<h2>사진 비교</h2><div class="compare-side">${images.map(x=>`<div><img src="${esc(x.dataUrl)}" alt="${x.kind}"><p>${esc(x.date)} ${x.kind}</p></div>`).join('')}</div><div class="fineprint">촬영 조건을 동일하게 맞추어 비교해야 합니다. AI 의료 진단 기능은 아닙니다.</div>`)}
 function showMember(cid=''){openModal(`<h2>회원권 발행/판매</h2>${mselect('고객','mbCid',state.customers.map(c=>c.id),cid||state.customers[0]?.id)}${mfield('회원권 이름','mbName','수분 집중관리 10회권')}${mfield('총 횟수','mbTotal',10,'number')}${mfield('유효기간','mbExpire',dateAdd(TODAY(),365),'date')}${mfield('결제 금액 (증정 시 0)','mbAmount',0,'number')}${mselect('결제수단','mbPayType',['CARD','CASH','TRANSFER','GIFT'],'CARD')}${modalFooter('membershipSave')}`)}
 function saveMember(){const cid=formValue('mbCid'),c=customer(cid),total=Number(formValue('mbTotal')),amount=Number(formValue('mbAmount'));if(!c||total<=0||!Number.isInteger(total)||amount<0)return toast('값을 확인하세요.');if(c.membership&&c.membership.used<c.membership.total&&!confirm('기존 잔여 회원권을 새 권으로 대체할까요? 기존 이력은 감사 로그로만 남습니다.'))return;c.membership={name:formValue('mbName'),total,used:0,expire:formValue('mbExpire')};state.membershipUsages.push({id:eid('MU'),cid,delta:total,type:'ISSUE',date:TODAY(),note:formValue('mbName')});if(amount>0)state.payments.push({id:eid('PY'),cid,amount,type:formValue('mbPayType'),memo:'회원권 판매: '+formValue('mbName'),date:TODAY(),voided:false});state.audits.push({action:'MEMBERSHIP_ISSUE',cid,amount,total,date:TODAY()});save();closeModal();render();toast('회원권 발행이 완료되었습니다.')}
+function positionOptions(selected=''){
+ return `<option value="">직책 없음</option>`+(remote.positions||[]).map(p=>`<option value="${esc(p.id)}" ${p.id===selected?'selected':''}>${esc(p.name)}</option>`).join('');
+}
+function renderStaffManagement(){
+ if(!serverMode())return '';
+ const admin=remote.role==='owner';
+ const roleName={owner:'최고관리자',manager:'관리자',therapist:'직원 (현재 조회 전용)'};
+ const profiles=remote.staff||[],positions=remote.positions||[];
+ const account=remote.user?.email||'로그인 계정';
+ const accountPhone=remote.user?.user_metadata?.contact_phone||'';
+ return pane('로그인 계정 · 매장 직원 분리',`
+   <div class="notice"><b>현재 로그인:</b> ${esc(account)} · 권한 <b>${roleName[remote.role]||'알 수 없음'}</b><br>
+   <span class="fineprint">계정 표시는 관리자이며 실제 직원으로 자동 등록되지 않아. 공용 관리자 계정으로 모든 직원의 예약을 등록할 수 있지만 조작한 개인을 추적하려면 직원별 이메일 계정이 필요해.</span></div>
+   <div class="sectionline"><h3>등록된 직원 ${profiles.length}명</h3></div>
+   <div class="liststack">${profiles.length?profiles.map(x=>rowAction(`${esc(staffLabel(x.name))} ${x.active?'':'(비활성)'}`,
+      `${x.auth_user_id===remote.user?.id?'내 관리자 계정 연결됨 · 권한 최고관리자':`계정 연결 시 권한: ${roleName[x.access_role]} · ${x.auth_user_id?'별도 계정 연결됨':'로그인 계정 없음'}`}`,
+      admin?`${x.active&&!x.auth_user_id?xbutton('초대코드 발급','staffProfileInvite',x.id):''}${x.active&&!x.auth_user_id&&!profiles.some(p=>p.auth_user_id===remote.user?.id)?xbutton('내 관리자계정 연결','staffProfileLinkOwner',x.id):''}${x.auth_user_id===remote.user?.id?xbutton('내 계정 연결 해제','staffProfileUnlinkOwner',x.id):''}${xbutton('직원 수정','staffProfileEdit',x.id)}`:''
+   )).join(''):'<div class="empty">직원 0명 · 필요한 직원을 이름만 입력해서 등록할 수 있어.</div>'}</div>
+   ${admin?`<div style="margin-top:14px">${xbutton('＋ 직원 신규','staffProfileNew','','primary')}</div>`:''}
+   <div class="fineprint">직책은 선택사항이야. 직원에 직책을 연결하면 화면에 <b>이름 · 직책</b>을 함께 표시해. 직책이나 직원이름을 변경해도 과거 예약 담당자 문자열은 자동 변경하지 않아.</div>
+ `)+pane('직책 관리',`
+   <div class="liststack">${positions.length?positions.map(x=>rowAction(esc(x.name),
+       `배정 직원 ${profiles.filter(st=>st.position_id===x.id).length}명`,
+       admin?xbutton('이름 수정','positionEdit',x.id):''
+   )).join(''):'<div class="empty">등록된 직책이 없어. 직원은 직책 없이도 등록 가능해.</div>'}</div>
+   ${admin?`<div style="margin-top:14px">${xbutton('＋ 직책 신규','positionNew','','primary')}</div>`:''}
+ `)+pane('개인 계정 설정 · 이메일 로그인',`
+    <div class="detail-row"><b>계정</b><span>${esc(account)}</span></div>
+    <div class="detail-row"><b>연락처 (선택·미인증)</b><span>${esc(accountPhone||'등록 안 됨')}</span></div>
+    ${xbutton('연락처 등록·수정','contactPhoneEdit','','small')}
+    <p class="fineprint">로그인은 이메일/비밀번호만 지원해. 이 연락처는 업무상 표시용이고 SMS 인증·로그인에 사용되지 않아.</p>
+    <p class="fineprint">직원 계정은 초대코드로 등록된 직원에 연결할 수 있어. 현재 JSONB DB 구조에서는 일반 직원은 조회 전용이며 관리자만 업무 수정이 가능해.</p>
+ `);
+}
+async function refreshStaffView(){
+ await remote.listStaff();
+ const active=remote.staff.filter(x=>x.active).map(x=>x.name);
+ state.staffNames=active; // zero staff is intentional; never create an implicit '원장' employee.
+ STAFf.splice(0,STAFf.length,...(active.length?active:['미지정']));
+ if(!active.includes(weekStaff))weekStaff=active[0]||'미지정';
+ closeModal();render();
+}
+function openNewStaff(){
+ if(!serverMode()||remote.role!=='owner')return toast('최고관리자 권한이 필요해.');
+ openModal(`<h2>직원 신규 등록</h2>${mfield('직원 이름 *','staffProfileName')}
+ <div class="field"><label>직책 (선택)</label><select class="select" id="staffProfilePosition">${positionOptions()}</select></div>
+ <div class="field"><label>이 직원이 이메일 계정을 연결할 경우의 권한</label><select class="select" id="staffProfileRole"><option value="therapist">직원 (현재 조회 전용)</option><option value="manager">관리자 (업무 편집)</option></select></div>
+ <p class="fineprint">직책이 없어도 직원 이름만으로 등록해. 로그인 계정은 따로 만들어야 하며, 필요할 때 초대코드를 발급하면 연결돼.</p>${modalFooter('staffProfileSave')}`);
+}
+async function saveNewStaff(){
+ const name=formValue('staffProfileName'),positionId=formValue('staffProfilePosition')||null,role=formValue('staffProfileRole');
+ if(!name)return toast('직원 이름을 입력해 줘.');
+ try{await remote.addStaff(name,positionId,role);await refreshStaffView();toast('직원 프로필이 추가됐어.');}
+ catch(e){toast('직원 등록 실패: '+e.message)}
+}
+function openEditStaff(id){
+ if(remote.role!=='owner')return;
+ const x=remote.staff.find(a=>a.id===id);if(!x)return;
+ openModal(`<h2>직원 수정 · ${esc(x.name)}</h2>${mfield('직원 이름 *','editStaffName',x.name)}
+ <div class="field"><label>직책 (선택)</label><select class="select" id="editStaffPosition">${positionOptions(x.position_id)}</select></div>
+ <div class="field"><label>연결 계정 권한</label><select class="select" id="editStaffRole"><option value="therapist" ${x.access_role==='therapist'?'selected':''}>직원 (현재 조회 전용)</option><option value="manager" ${x.access_role==='manager'?'selected':''}>관리자 (업무 편집)</option></select></div>
+ <label class="checkline"><input id="editStaffActive" type="checkbox" ${x.active?'checked':''}> 재직/활성</label>
+ <div class="notice">직원 이름 변경 시 이미 생성된 과거 예약의 담당자 문자열은 자동 변환되지 않아.</div>${modalFooter('staffProfileUpdate',id)}`);
+}
+async function updateStaff(id){
+ try{await remote.editStaff(id,formValue('editStaffName'),formValue('editStaffPosition')||null,formValue('editStaffRole'),$('#editStaffActive').checked);
+ await refreshStaffView();toast('직원 정보가 변경됐어.');}
+ catch(e){toast('변경 실패: '+e.message)}
+}
+async function linkOwnerStaff(id){
+ if(!confirm('선택한 직원 프로필을 현재 최고관리자 로그인 계정과 연결할까? 관리자 권한은 그대로 유지돼.'))return;
+ try{await remote.linkOwnerStaff(id);await refreshStaffView();toast('관리자 계정과 직원 프로필이 연결됐어.');}
+ catch(e){toast('계정 연결 실패: '+e.message)}
+}
+async function unlinkOwnerStaff(id){
+ if(!confirm('선택한 직원과 내 관리자 계정의 연결을 해제할까? 매장 최고관리자 권한은 그대로 유지돼.'))return;
+ try{await remote.unlinkOwnerStaff(id);await refreshStaffView();toast('직원 연결이 해제됐어.');}
+ catch(e){toast('연결 해제 실패: '+e.message)}
+}
+function openNewPosition(){
+ if(remote.role!=='owner')return;
+ openModal(`<h2>직책 신규 등록</h2>${mfield('직책 이름 *','positionName','','text')}<p class="fineprint">예: 원장, 실장, 피부관리사. 직책은 로그인 계정 권한과 무관해.</p>${modalFooter('positionSave')}`);
+}
+async function saveNewPosition(){
+ const name=formValue('positionName');if(!name)return toast('직책 이름을 입력해 줘.');
+ try{await remote.addPosition(name);await refreshStaffView();toast('직책이 등록됐어.');}catch(e){toast('직책 등록 실패: '+e.message)}
+}
+function openEditPosition(id){
+ const item=remote.positions.find(p=>p.id===id);if(!item)return;
+ const assigned=remote.staff.some(x=>x.position_id===id);
+ openModal(`<h2>직책 수정</h2>${mfield('직책 이름','positionEditName',item.name)}
+ ${modalFooter('positionUpdate',id)}${!assigned?`<div class="actions">${xbutton('미사용 직책 삭제','positionDelete',id,'danger small')}</div>`:'<p class="fineprint">이 직책을 사용 중인 직원이 있어 삭제할 수 없어.</p>'}`);
+}
+async function updatePosition(id){
+ try{await remote.editPosition(id,formValue('positionEditName'));await refreshStaffView();toast('직책 이름이 수정됐어.');}catch(e){toast('직책 수정 실패: '+e.message)}
+}
+async function deletePosition(id){
+ if(!confirm('미사용 직책을 삭제할까?'))return;
+ try{await remote.deletePosition(id);await refreshStaffView();toast('직책이 삭제됐어.');}catch(e){toast('직책 삭제 실패: '+e.message)}
+}
+function openContactPhone(){
+ const value=remote.user?.user_metadata?.contact_phone||'';
+ openModal(`<h2>개인 연락처 (선택)</h2><p class="fineprint">SMS로 인증하지 않으며 로그인 수단으로 사용하지 않아.</p>
+ ${mfield('연락처','contactPhone',value,'tel')}${modalFooter('contactPhoneSave')}`);
+}
+async function saveContactPhone(){
+ try{await remote.updateContactPhone(formValue('contactPhone'));closeModal();render();toast('연락처가 저장됐어.');}
+ catch(e){toast('연락처 저장 실패: '+e.message)}
+}
+async function inviteStaffProfile(id){
+ try{const code=await remote.inviteStaff(id);
+   openModal(`<h2>직원 초대코드</h2><p>직원이 Aesthetic Manager에서 <b>이메일 계정으로 가입·로그인</b>한 뒤 <b>기존 매장 참여</b>에 아래 코드를 입력하면 등록된 직원 프로필에 연결돼.</p>
+   <div class="msgbox" style="word-break:break-all">${esc(code)}</div><button class="btn primary" id="copyStaffInvite">코드 복사</button><p class="fineprint">48시간 유효 · 1회 사용. 공개 채팅방이나 SNS에 올리지 마세요.</p>`);
+   $('#copyStaffInvite').onclick=()=>navigator.clipboard?.writeText(code).then(()=>toast('초대코드 복사됨')).catch(()=>toast('코드를 직접 복사해 줘.'));
+ }catch(e){toast('초대코드 발급 실패: '+e.message)}
+}
 function extraAction(action,id){
  switch(action){
- case 'staffNew':openModal(`<h2>관리사 추가</h2>${mfield('이름','staffNewName')}${modalFooter('staffSave')}`);break;
+ case 'staffProfileNew':openNewStaff();break;
+ case 'staffProfileSave':void saveNewStaff();break;
+ case 'staffProfileEdit':openEditStaff(id);break;
+ case 'staffProfileUpdate':void updateStaff(id);break;
+ case 'staffProfileInvite':void inviteStaffProfile(id);break;
+ case 'staffProfileLinkOwner':void linkOwnerStaff(id);break;
+ case 'staffProfileUnlinkOwner':void unlinkOwnerStaff(id);break;
+ case 'contactPhoneEdit':openContactPhone();break;
+ case 'contactPhoneSave':void saveContactPhone();break;
+ case 'positionNew':openNewPosition();break;
+ case 'positionSave':void saveNewPosition();break;
+ case 'positionEdit':openEditPosition(id);break;
+ case 'positionUpdate':void updatePosition(id);break;
+ case 'positionDelete':void deletePosition(id);break;
+ case 'staffNew':if(serverMode()){openNewStaff();break;}openModal(`<h2>관리사 추가</h2>${mfield('이름','staffNewName')}${modalFooter('staffSave')}`);break;
  case 'staffSave':{const n=formValue('staffNewName');if(!n||state.staffNames.includes(n))return toast('중복되지 않는 관리사 이름을 입력하세요.');state.staffNames.push(n);STAFf.push(n);save();closeModal();render();break;}
  case 'roomNew':openModal(`<h2>관리실/베드 추가</h2>${mfield('명칭','roomNewName')}${modalFooter('roomSave')}`);break;
  case 'roomSave':{const n=formValue('roomNewName');if(!n||state.rooms.includes(n))return toast('중복되지 않는 관리실 이름을 입력하세요.');state.rooms.push(n);save();closeModal();render();break;}
@@ -424,7 +555,15 @@ function showPayment(){openModal(`<h2>결제 수동 등록</h2>${mselect('고객
 function savePayment(){const amount=Number(formValue('payAmount'));if(!Number.isFinite(amount)||amount<=0)return toast('결제금액을 확인하세요.');state.payments.push({id:eid('PY'),cid:formValue('payCid'),amount,type:formValue('payMethod'),memo:formValue('payMemo'),date:TODAY(),voided:false});save();closeModal();render()}
 function voidPayment(id){const p=state.payments.find(x=>x.id===id);if(!p||!confirm('결제 취소 처리할까요? 이력은 유지됩니다.'))return;p.voided=true;p.voidedAt=new Date().toISOString();state.audits.push({action:'PAYMENT_VOID',id,date:TODAY()});save();render()}
 function showConfig(){openModal(`<h2>매장 운영 정책</h2>${mfield('매장 이름','cfgName',state.shopConfig.name)}${mfield('무료 주차 시간 (분)','cfgPark',state.shopConfig.parkingMinutes,'number')}${mfield('예약 취소 안내 (시간 전)','cfgCancel',state.shopConfig.cancelHours,'number')}${modalFooter('configSave')}`)}
-function saveConfig(){const park=Number(formValue('cfgPark')),cancel=Number(formValue('cfgCancel'));if(!formValue('cfgName')||park<0||cancel<0)return toast('값을 확인하세요.');Object.assign(state.shopConfig,{name:formValue('cfgName'),parkingMinutes:park,cancelHours:cancel});save();closeModal();render()}
+async function saveConfig(){const park=Number(formValue('cfgPark')),cancel=Number(formValue('cfgCancel'));
+ const name=formValue('cfgName');if(!name||park<0||cancel<0)return toast('값을 확인하세요.');
+ try{
+   if(serverMode()&&remote.shopName!==name){if(remote.role!=='owner')return toast('매장 이름은 최고관리자만 변경할 수 있어.');await remote.renameShop(name)}
+   Object.assign(state.shopConfig,{name,parkingMinutes:park,cancelHours:cancel});save();closeModal();
+   if(serverMode()){const brand=document.querySelector('.brand b');if(brand)brand.textContent=name;const crumb=document.querySelector('.topbar .crumb');if(crumb)crumb.firstChild.textContent=name+' '}
+   render();
+ }catch(e){toast('매장 설정 변경 실패: '+e.message)}
+}
 function showService(id){const s=state.services.find(x=>x.id===id);openModal(`<h2>${s?'프로그램 수정':'프로그램 추가'}</h2>${mfield('프로그램명','svName',s?.name||'')}${mfield('소요시간 (분)','svMinutes',s?.minutes||60,'number')}${mfield('판매 가격','svPrice',s?.price||0,'number')}${modalFooter('serviceSave',id)}`)}
 function saveService(id){const name=formValue('svName'),minutes=Number(formValue('svMinutes')),price=Number(formValue('svPrice'));if(!name||minutes<=0||!Number.isFinite(price)||price<0)return toast('내용을 확인하세요.');const s=state.services.find(x=>x.id===id);if(s)Object.assign(s,{name,minutes,price});else state.services.push({id:eid('S'),name,minutes,price});save();closeModal();render()}
 function backupExport(){const data=JSON.stringify({format:'ongeol-prototype',version:6,exportedAt:new Date().toISOString(),state},null,2);const blob=new Blob([data],{type:'application/json'});const a=document.createElement('a');const url=URL.createObjectURL(blob);a.href=url;a.download=`ongeol-backup-${TODAY()}.json`;a.click();URL.revokeObjectURL(url)}
@@ -453,7 +592,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#modalRoot')?.in
 document.addEventListener('input',e=>{if(e.target.id==='customerSearch'){$('#customerRows').innerHTML=renderCustomerList(e.target.value)}if(e.target.id==='scheduleZoom'){const opts=ZOOM_LEVELS;scheduleZoom=opts[+e.target.value]??.3;render()}});
 document.addEventListener('change',e=>{if(e.target.id==='audioFile'&&e.target.files?.[0]){handleAudio(e.target.files[0],e.target.files[0].name);return;}if(e.target.id==='backupFile'&&e.target.files?.[0]){backupImport(e.target.files[0]);return;}if(e.target.id==='scheduleDateInput'){scheduleDate=e.target.value||TODAY();render();return}if(e.target.id==='scheduleStaff'){staffFilter=e.target.value;render();return}if(e.target.id==='scheduleWeekStaff'){weekStaff=e.target.value;render();return}if(e.target.id==='scheduleStatus'){statusFilter=e.target.value;render();return}if(e.target.id==='consultCustomer'){activeConsultCid=e.target.value;analysisResult=null;render();return}if(e.target.id==='sampleCase'){aiCase=e.target.value;analysisResult=null;render();return}if(e.target.hasAttribute('data-proposal')&&analysisResult){syncAnalysisFields();analysisResult.updates[Number(e.target.dataset.proposal)].selected=e.target.checked;const count=analysisResult.updates.filter(x=>x.selected).length;const btn=document.querySelector('[data-act="applyProposals"]');if(btn)btn.textContent=`선택한 ${count}건 승인·확정`;}});
 // The pointer interaction is intentionally restricted to appointment cards. Drag to a lane, resize using the ↕ lower edge.
-document.addEventListener('pointerdown',e=>{const card=e.target.closest('[data-booking]');if(!card||e.button!==0)return;const r=state.reservations.find(x=>x.id===card.dataset.booking);if(!r||r.archived||r.status==='COMPLETED')return;const resize=!!e.target.closest('[data-resize]');const rect=card.getBoundingClientRect();pointerBooking={id:r.id,card,pointerId:e.pointerId,startX:e.clientX,startY:e.clientY,offsetY:e.clientY-rect.top,resize,dragged:false,suppressClick:false,originalHeight:rect.height};card.setPointerCapture(e.pointerId);});
+document.addEventListener('pointerdown',e=>{if(serverMode()&&remote.role==='therapist')return;const card=e.target.closest('[data-booking]');if(!card||e.button!==0)return;const r=state.reservations.find(x=>x.id===card.dataset.booking);if(!r||r.archived||r.status==='COMPLETED')return;const resize=!!e.target.closest('[data-resize]');const rect=card.getBoundingClientRect();pointerBooking={id:r.id,card,pointerId:e.pointerId,startX:e.clientX,startY:e.clientY,offsetY:e.clientY-rect.top,resize,dragged:false,suppressClick:false,originalHeight:rect.height};card.setPointerCapture(e.pointerId);});
 document.addEventListener('pointermove',e=>{const p=pointerBooking;if(!p||p.pointerId!==e.pointerId||!p.card.isConnected)return;const dx=e.clientX-p.startX,dy=e.clientY-p.startY;if(!p.dragged&&Math.hypot(dx,dy)<6)return;p.dragged=true;p.suppressClick=true;p.card.classList.add('being-dragged');if(p.resize)p.card.style.height=Math.max(5,p.originalHeight+dy)+'px';else p.card.style.transform=`translate(${dx}px,${dy}px)`;});
 document.addEventListener('pointerup',e=>{const p=pointerBooking;if(!p||p.pointerId!==e.pointerId)return;const r=state.reservations.find(x=>x.id===p.id);if(p.card.isConnected){p.card.classList.remove('being-dragged');p.card.style.transform='';p.card.style.height='';}if(!p.dragged||!r){pointerBooking=null;return}e.preventDefault();suppressBookingClickUntil=Date.now()+450;let proposal={};if(p.resize){proposal.minutes=Math.max(30,snap15(r.minutes+(e.clientY-p.startY)/scheduleZoom));}else{const card=p.card;card.style.pointerEvents='none';const hit=document.elementFromPoint(e.clientX,e.clientY);card.style.pointerEvents='';const lane=hit?.closest('[data-lane-date]');if(!lane){toast('시간표 영역에 놓아주세요.');pointerBooking=null;return}const rect=lane.getBoundingClientRect();proposal={date:lane.dataset.laneDate,staff:lane.dataset.laneStaff,room:lane.dataset.laneStaff===r.staff?r.room:(state.rooms[0]||'관리실 A'),time:toHHMM(Math.max(SLOT_START,Math.min(SLOT_END-r.minutes,snap15(SLOT_START+(e.clientY-rect.top-p.offsetY)/scheduleZoom))))}}pointerBooking=null;scheduleDropProposal(r.id,proposal,p.resize?'resize':'move');});
 document.addEventListener('pointercancel',()=>{if(pointerBooking?.card?.isConnected){pointerBooking.card.style.transform='';pointerBooking.card.style.height='';pointerBooking.card.classList.remove('being-dragged')}pointerBooking=null});
@@ -462,48 +601,59 @@ async function enterRemote(){
   const shell=document.createElement('div');shell.className='auth-backdrop';shell.id='loginShell';document.body.appendChild(shell);
   const displayMessage = (msg,bad=false)=>{const el=shell.querySelector('#authMessage');if(el){el.style.color=bad?'#af4242':'#257259';el.textContent=msg}};
   function authForm(mode='login'){
-    shell.innerHTML=`<form id="authForm" class="auth-card"><h2>✳ 온결</h2><p>피부관리샵 운영 · Supabase 서버 연결</p>
-    <div class="auth-section"><label>이메일</label><input id="authEmail" class="input" type="email" required autocomplete="username" placeholder="owner@example.com">
-    <label>비밀번호</label><input id="authPassword" class="input" type="password" required minlength="6" autocomplete="${mode==='signup'?'new-password':'current-password'}" placeholder="비밀번호"></div>
-    <p id="authMessage"></p><button class="btn primary" type="submit">${mode==='signup'?'새 계정 만들기':'로그인'}</button>
-    <div class="auth-secondary"><button class="btn small" type="button" id="toggleAuth">${mode==='signup'?'로그인으로 돌아가기':'첫 사용 · 계정 만들기'}</button></div>
-    <p class="fineprint">서버에 로그인한 후 내 매장을 개설하거나 직원 초대코드로 참여할 수 있습니다.</p></form>`;
+    shell.innerHTML=`<div class="auth-card wide-auth"><h2>✳ 온결</h2><p>Aesthetic Manager · 피부관리샵 운영 계정</p>
+      <form id="authForm" class="auth-section">
+        <label>이메일</label><input id="authEmail" class="input" type="email" required autocomplete="username" placeholder="manager@example.com">
+        <label>비밀번호</label><input id="authPassword" class="input" type="password" required minlength="6" autocomplete="${mode==='signup'?'new-password':'current-password'}">
+        <button class="btn primary" type="submit">${mode==='signup'?'회원가입':'로그인'}</button>
+        <button class="btn small" id="toggleAuth" type="button">${mode==='signup'?'이미 계정 있음 · 로그인':'이메일로 계정 만들기'}</button>
+      </form>
+      <p id="authMessage" aria-live="polite"></p>
+      <p class="fineprint">처음 매장을 만들면 이 계정은 최고관리자가 돼. 실제 직원은 자동 등록되지 않으며 설정에서 따로 추가해.</p></div>`;
     shell.querySelector('#toggleAuth').onclick=()=>authForm(mode==='signup'?'login':'signup');
-    shell.querySelector('#authForm').onsubmit=async(e)=>{e.preventDefault();const b=shell.querySelector('[type=submit]');b.disabled=true;
+    shell.querySelector('#authForm').addEventListener('submit',async e=>{e.preventDefault();const b=e.submitter;b.disabled=true;
       try{const email=shell.querySelector('#authEmail').value.trim(),pass=shell.querySelector('#authPassword').value;
-        if(mode==='signup'){const r=await remote.signup(email,pass);
-          if(!r?.access_token){displayMessage('계정 생성 요청을 완료했어. 이메일 인증 링크를 확인한 뒤 로그인해 줘.');return;}
+        if(mode==='signup'){
+          const r=await remote.signup(email,pass);
+          if(!r?.access_token){displayMessage('가입 요청 완료. 이메일 인증 링크를 확인한 뒤 로그인해 줘.');return;}
         }else await remote.login(email,pass);
         await afterAuth();
-      }catch(ex){displayMessage('인증 오류: '+ex.message,true)}finally{b.disabled=false}
-    };
+      }catch(ex){displayMessage('인증 오류: '+ex.message,true)}finally{if(b.isConnected)b.disabled=false}
+    });
   }
-  function onboarding(){shell.innerHTML=`<div class="auth-card"><h2>매장 시작하기</h2><p>로그인에 성공했어. 새 매장을 만들거나 기존 매장의 초대코드로 참여할 수 있어.</p>
-    <form class="auth-section" id="createShopForm"><label>매장 이름</label><input required maxlength="100" class="input" id="shopNameInput" placeholder="예: 나의 피부관리샵"><button class="btn primary" type="submit">새 매장 만들기</button></form>
-    <div style="border-top:1px solid #eee;padding-top:15px" class="auth-section"><label>다른 매장 직원 초대코드 (선택)</label><input class="input" id="shopInviteCode" placeholder="원장에게 받은 코드"><button class="btn" id="joinShopButton">초대코드로 참여</button></div>
-    <p id="authMessage"></p><button type="button" class="btn" id="onboardLogout">다른 계정으로 로그인</button></div>`;
+  function onboarding(){shell.innerHTML=`<div class="auth-card wide-auth"><h2>새 매장 만들기</h2>
+    <p>가입한 로그인 계정은 새 매장의 <b>최고관리자</b>가 돼. <b>직원은 0명</b> 상태로 시작해.</p>
+    <form class="auth-section" id="createShopForm">
+      <label>매장 브랜드 이름 *</label><input required maxlength="100" class="input" id="shopNameInput" placeholder="예: 라온 에스테틱">
+      <p class="fineprint">매장 생성 후 설정 → 직원·계정에서 직책과 직원을 각각 등록할 수 있어.</p>
+      <button class="btn primary" type="submit">매장 개설 · 관리자 계정으로 시작</button>
+    </form>
+    <div class="sectionline"><h3>직원으로 기존 매장 참여</h3>
+      <label>관리자에게 받은 초대코드</label><input class="input" id="shopInviteCode" placeholder="초대코드 붙여넣기">
+      <button class="btn" id="joinShopButton">초대코드로 계정 연결</button></div>
+    <p id="authMessage" aria-live="polite"></p><button type="button" class="btn" id="onboardLogout">다른 계정으로 로그인</button></div>`;
     shell.querySelector('#createShopForm').onsubmit=async(e)=>{e.preventDefault();const b=e.submitter;b.disabled=true;
       try{await remote.createShop(shell.querySelector('#shopNameInput').value.trim());await loadShop();}
-      catch(ex){displayMessage('매장 생성 실패: '+ex.message,true)}finally{b.disabled=false}};
-    shell.querySelector('#joinShopButton').onclick=async e=>{e.currentTarget.disabled=true;try{await remote.joinShop(shell.querySelector('#shopInviteCode').value.trim());await loadShop();}catch(ex){displayMessage('초대 참여 실패: '+ex.message,true)}finally{e.currentTarget.disabled=false}};
+      catch(ex){displayMessage('매장 개설 실패: '+ex.message,true)}finally{if(b.isConnected)b.disabled=false}
+    };
+    shell.querySelector('#joinShopButton').onclick=async e=>{e.currentTarget.disabled=true;
+      try{await remote.joinShop(shell.querySelector('#shopInviteCode').value.trim());await loadShop()}
+      catch(ex){displayMessage('초대 참여 실패: '+ex.message,true)}finally{if(e.currentTarget.isConnected)e.currentTarget.disabled=false}
+    };
     shell.querySelector('#onboardLogout').onclick=async()=>{await remote.logout();authForm('login')};
   }
   async function afterAuth(){const m=await remote.membership();if(m)await loadShop();else onboarding()}
   async function loadShop(){let serverState=await remote.read();if(!serverState||typeof serverState!=='object'||!Array.isArray(serverState.customers))throw Error('서버 데이터 형식 오류');
-    state=serverState;ensureDemoState();ensureExtendedState();scheduleDate=TODAY();weekStaff=state.staffNames[0]||'원장';
+    state=serverState;ensureDemoState();ensureExtendedState();scheduleDate=TODAY();weekStaff=state.staffNames[0]||'미지정';
     selectedCustomer=state.customers[0]?.id||'';activeConsultCid=selectedCustomer;view='today';shell.remove();
-    document.querySelector('.brand small').textContent='SKINCARE STUDIO · CLOUD';
-    document.querySelector('.sidebottom').innerHTML='Supabase 서버 저장 · v0.7<br>실제 고객정보 사용 전 개인정보·운영 보안 점검이 필요합니다.';
+    document.querySelector('.brand small').textContent='온결 · AESTHETIC MANAGER';
+    document.querySelector('.brand b').textContent=remote.shopName;
+    document.querySelector('.sidebottom').innerHTML='Supabase 서버 저장 · v0.9<br>실제 고객정보 사용 전 개인정보·운영 보안 점검이 필요합니다.';
     document.querySelector('.topactions .pill').textContent='● 서버 연결';
     const crumb=document.querySelector('.topbar .crumb');if(crumb)crumb.firstChild.textContent=remote.shopName+' ';
-    const avatar=document.querySelector('.topactions .avatar');if(avatar)avatar.title=remote.user?.email||'로그인 계정';
+    const avatar=document.querySelector('.topactions .avatar');if(avatar){avatar.title=remote.user?.email||remote.user?.phone||'로그인 계정';avatar.textContent=remote.role==='owner'?'관':remote.role==='manager'?'매':'직'}
     const inviteBtn=document.getElementById('inviteStaff');if(inviteBtn)inviteBtn.remove();
-    if(remote.role==='owner'){
-      const b=document.createElement('button');b.className='btn small';b.id='inviteStaff';b.textContent='직원 초대';
-      b.onclick=async()=>{if(!confirm('현재 직원 역할별 고객 필드 접근 통제가 아직 분리되지 않았습니다. 신뢰할 수 있는 직원에게만 초대코드를 제공하세요.'))return;
-        try{const code=await remote.invite('therapist');prompt('48시간 동안 1회 사용할 수 있는 직원 초대코드입니다. 복사하여 직원에게 직접 전달하세요.',code)}catch(ex){toast('초대코드 생성 실패: '+ex.message)}};
-      document.querySelector('.topactions').prepend(b);
-    }
+    // Staff invitation is available in Settings → 직원·계정 관리.
     render();
   }
   if(!configurationReady()){shell.innerHTML=`<div class="auth-card"><h2>Supabase 설정 필요</h2><p>배포 파일 <code>config.js</code> 안에 Supabase Project URL과 Publishable Key를 입력하고 다시 배포해 줘.</p><p>ZIP의 <b>SETUP_KO.md</b>에서 전체 설치 순서를 확인할 수 있어.</p></div>`;return;}
@@ -514,6 +664,17 @@ async function enterRemote(){
   document.getElementById('remoteRefresh')?.addEventListener('click',()=>{if(remote.dirty||remote.running){toast('서버 저장 완료 후 새로고침해 주세요.');return}location.reload()});
   window.addEventListener('beforeunload',e=>{if(remote.dirty){e.preventDefault();e.returnValue='저장 중인 내용이 있습니다.'}});
 }
+// Until entity-level RBAC is ready, therapist logins are strictly read-only, not fake write access.
+document.addEventListener('click',e=>{
+ if(!serverMode()||remote.role!=='therapist')return;
+ const el=e.target.closest('[data-extra],[data-act],[data-res-action],[data-new-at]');
+ if(!el)return;
+ const safeActs=new Set(['closeModal','goReservations','goAI','goCustomerAI','scheduleToday','clearProposals']);
+ const safeExtras=new Set(['contactPhoneEdit','contactPhoneSave','marketCRM','marketOps']);
+ if(el.dataset.act&&safeActs.has(el.dataset.act))return;
+ if(el.dataset.extra&&safeExtras.has(el.dataset.extra))return;
+ e.preventDefault();e.stopImmediatePropagation();toast('일반 직원 계정은 현재 조회 전용이야. 업무별 권한 기능을 도입하면 편집을 활성화할 수 있어.');
+},true);
 if(serverMode())enterRemote();else render();
 
 if('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('./sw.js').catch(()=>{});
