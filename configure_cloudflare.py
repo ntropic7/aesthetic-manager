@@ -1,10 +1,10 @@
-"""온결 Cloudflare 업로드 ZIP 생성기 (Python 표준 라이브러리만 사용)."""
+"""Aesthetic Manager Cloudflare 업로드 ZIP 생성기 (Python 표준 라이브러리만 사용)."""
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
 import re
 
 ROOT = Path(__file__).resolve().parent
-print('온결 v0.7 Supabase 설정 → Pages 업로드용 ZIP 생성')
+print('Aesthetic Manager v0.9 Supabase 설정 → Pages 업로드용 ZIP 생성')
 url = input('Supabase Project URL (https://xxx.supabase.co): ').strip().rstrip('/')
 key = input('Supabase Publishable key (sb_publishable_...): ').strip()
 if not re.fullmatch(r'https://[a-z0-9-]+\.supabase\.co', url, re.I):
@@ -13,10 +13,11 @@ if not key.startswith('sb_publishable_') or len(key) < 20 or any(x in key.lower(
     raise SystemExit('오류: secret/service_role가 아닌 Publishable key를 입력해 주세요.')
 config = ("window.ONGEOL_CONFIG = Object.freeze({\n"
           "  apiMode: 'supabase',\n"
+
           f"  supabaseUrl: '{url}',\n"
           f"  supabasePublishableKey: '{key}'\n"
           "});\n")
-out = ROOT / 'ongeol_pages_configured.zip'
+out = ROOT / 'aesthetic_manager_pages_configured.zip'
 with ZipFile(out, 'w', ZIP_DEFLATED) as z:
     for f in sorted((ROOT / 'web').iterdir()):
         if f.is_file():
