@@ -11,7 +11,7 @@ const KEY='ongeol_supabase_session_v07';
 const deepCopy = obj => JSON.parse(JSON.stringify(obj));
 const enc = text => encodeURIComponent(text);
 export class RemoteState {
-  constructor(onError){this.onError=onError;this.session=null;this.shopId=null;this.role=null;this.shopName='';this.revision=0;this.staff=[];this.positions=[];this.pending=null;this.running=false;this.failed=false;this.refreshing=null;this.dirty=false;
+  constructor(onError){this.onError=onError;this.session=null;this.shopId=null;this.role=null;this.shopName='';this.revision=0;this.staff=[];this.positions=[];this.privacy={};this.joinRequests=[];this.connectionCode="";this.pending=null;this.running=false;this.failed=false;this.refreshing=null;this.dirty=false;
     try{const s=JSON.parse(localStorage.getItem(KEY)||'null');if(s?.access_token&&s?.refresh_token)this.session=s}catch{}}
   get token(){return this.session?.access_token||''}
   get base(){return (conf().supabaseUrl||'').replace(/\/$/,'')}
@@ -41,14 +41,15 @@ export class RemoteState {
   }
   async ensureSession(){if(!this.session)return null;if((this.session.expires_at||0)*1000<Date.now()+120000)await this.refresh();return this.session;}
   async restore(){if(!this.session)return false;try{await this.ensureSession();const u=await this.raw('/auth/v1/user');if(u?.id){this.session.user=u;this.storeSession(this.session);return true}}catch{this.storeSession(null)}return false;}
-  async logout(){try{if(this.session)await this.raw('/auth/v1/logout',{method:'POST'});}catch{}this.storeSession(null);this.shopId=null;this.revision=0;this.staff=[];this.positions=[];this.pending=null;this.failed=false;}
+  async logout(){try{if(this.session)await this.raw('/auth/v1/logout',{method:'POST'});}catch{}this.storeSession(null);this.shopId=null;this.revision=0;this.staff=[];this.positions=[];this.joinRequests=[];this.connectionCode="";this.pending=null;this.failed=false;}
   async rpc(name,parameters){await this.ensureSession();return this.raw('/rest/v1/rpc/'+name,{method:'POST',payload:parameters});}
   async membership(){await this.ensureSession();const r=await this.raw('/rest/v1/shop_members?select=shop_id,role&user_id=eq.'+enc(this.user?.id||'')+'&limit=1');
     const m=r?.[0];if(m){this.shopId=m.shop_id;this.role=m.role;return m}return null;
   }
-  async createShop(name){
-    const id=await this.rpc('aesthetic_create_shop',{
-      p_name:name,p_staff_name:'',p_staff_title:'',p_link_creator:false
+  async createShop(name,staffName,positionName='',linkCreator=false){
+    if(!String(staffName||'').trim())throw new ApiFailure('첫 직원 1명을 등록해 주세요.');
+    const id=await this.rpc('aesthetic_create_shop_v3',{
+      p_name:name,p_staff_name:staffName,p_staff_position_name:positionName||null,p_link_creator:!!linkCreator
     });this.shopId=id;this.role='owner';return id;
   }
   async listStaff(){if(!this.shopId)return [];
@@ -58,6 +59,23 @@ export class RemoteState {
     ]);
     this.staff=staff||[];this.positions=positions||[];
     return this.staff;
+  }
+  async acknowledgeMyStaffNotice(id,version){return this.rpc('aesthetic_ack_own_staff_notice',{p_shop:this.shopId,p_staff:id,p_version:version});}
+  async accountDocuments(){
+    await this.ensureSession();
+    return this.raw('/rest/v1/privacy_account_documents?select=document_key,version&user_id=eq.'+enc(this.user?.id||''));
+  }
+  async acknowledgeAccountDocument(key,version){return this.rpc('aesthetic_ack_account_doc',{p_document:key,p_version:version});}
+  async privacyStatus(){
+    if(!this.shopId)return {};
+    this.privacy=await this.rpc('aesthetic_privacy_status',{p_shop:this.shopId});return this.privacy;
+  }
+  async acceptShopDocument(key,version){return this.rpc('aesthetic_accept_shop_doc',{p_shop:this.shopId,p_document:key,p_version:version});}
+  async recordPrivacyEvidence(subjectKind,subjectRef,purpose,basis,method,version,reference='',action='RECORDED'){
+    return this.rpc('aesthetic_privacy_evidence',{
+      p_shop:this.shopId,p_subject_kind:subjectKind,p_subject_ref:subjectRef,p_purpose:purpose,
+      p_basis:basis,p_method:method,p_version:version,p_reference:reference,p_action:action
+    });
   }
   async addStaff(name,positionId=null,role='therapist'){
     return this.rpc('aesthetic_create_staff_v2',{p_shop:this.shopId,p_name:name,p_position_id:positionId||null,p_access_role:role});
@@ -80,7 +98,25 @@ export class RemoteState {
   async unlinkOwnerStaff(id){return this.rpc('aesthetic_unlink_owner_staff',{p_shop:this.shopId,p_staff:id});}
   async inviteStaff(id){return this.rpc('aesthetic_invite_staff',{p_shop:this.shopId,p_staff:id});}
   async renameShop(name){await this.rpc('aesthetic_rename_shop',{p_shop:this.shopId,p_name:name});this.shopName=name;}
-  async joinShop(code){const id=await this.rpc('aesthetic_join_shop',{p_code:code});this.shopId=id;return this.membership();}
+  async requestJoin(code){return this.rpc('aesthetic_request_join',{p_code:code});}
+  async myJoinRequest(){return this.rpc('aesthetic_my_join_request',{});}
+  async loadJoinRequests(){if(this.role!=='owner')return [];
+    const [code,requests]=await Promise.all([
+      this.rpc('aesthetic_get_connection_code',{p_shop:this.shopId}),
+      this.raw('/rest/v1/shop_join_requests?select=id,shop_id,user_email,status,created_at&shop_id=eq.'+enc(this.shopId)+'&order=created_at.desc')
+    ]);
+    this.connectionCode=code;this.joinRequests=requests||[];return this.joinRequests;
+  }
+  async rotateConnectionCode(){this.connectionCode=await this.rpc('aesthetic_rotate_connection_code',{p_shop:this.shopId});return this.connectionCode;}
+  async reviewJoin(params){return this.rpc('aesthetic_review_join',{
+    p_request:params.p_request,p_action:params.p_action,p_staff:params.p_staff||null,
+    p_staff_name:params.p_staff_name||null,p_position:params.p_position||null,p_access_role:params.p_access_role||'therapist'
+  });}
+  async staffDependencies(staffId){return this.rpc('aesthetic_staff_dependencies',{p_shop:this.shopId,p_staff:staffId});}
+  async reassignStaff(fromId,toId){return this.rpc('aesthetic_reassign_staff',{p_shop:this.shopId,p_from:fromId,p_to:toId});}
+  async deleteStaff(staffId){return this.rpc('aesthetic_delete_staff',{p_shop:this.shopId,p_staff:staffId});}
+  async disconnectStaff(staffId){return this.rpc('aesthetic_disconnect_staff',{p_shop:this.shopId,p_staff:staffId});}
+  async joinShop(){throw new ApiFailure('기존 매장 가입은 관리자 승인 후 가능합니다.');}
   async invite(role='therapist'){return this.rpc('ongeol_create_invite',{p_shop:this.shopId,p_role:role});}
   async read(){if(!this.shopId)throw new ApiFailure('매장 선택이 필요합니다.');await this.ensureSession();
     const [rows,shops]=await Promise.all([
@@ -88,7 +124,7 @@ export class RemoteState {
       this.raw('/rest/v1/shops?select=name&id=eq.'+enc(this.shopId)+'&limit=1')
     ]);
     if(!rows?.length)throw new ApiFailure('매장 데이터에 접근할 수 없습니다. 관리자에게 문의하세요.',403);
-    this.revision=Number(rows[0].revision);this.shopName=shops?.[0]?.name||'내 피부관리샵';
+    this.revision=Number(rows[0].revision);this.shopName=shops?.[0]?.name||'내 매장';
     const data=rows[0].data||{};
     if(data.staffNames?.length===1&&data.staffNames[0]==='원장'&&
        !(data.reservations||[]).some(r=>r.staff==='원장'))data.staffNames=[];

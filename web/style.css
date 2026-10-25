@@ -144,3 +144,15 @@
 .auth-card .sectionline{margin:8px 0 4px;padding-top:10px}
 .auth-card .sectionline h3{margin:0 0 8px;font-size:15px}
 @media(max-width:480px){.auth-card.wide-auth{padding:19px 17px;max-height:95dvh}}
+
+/* v1.0: fixed visible timetable canvas; +/- zoom the time axis inside this canvas. */
+.timetable-scroll{height:518px!important;max-height:518px!important;overflow:auto!important;overscroll-behavior:contain;scrollbar-gutter:stable}
+.timetable .lane-head{position:sticky;top:0;z-index:7;background:#f7faf7}
+.timetable .time-title{z-index:9}
+.zoomline{align-items:center;flex-wrap:wrap}
+.zoomline .btn[data-zoom]{min-width:35px;font-weight:800}
+.setting-chip{display:inline-block;background:#eff6ef;border:1px solid #d5e4da;border-radius:10px;padding:6px 11px;margin:3px 5px 3px 0;color:#426f58;font-size:12px}
+.code-display{padding:11px 12px;border-radius:9px;background:#fff;border:1px dashed #9dbfac;font-family:ui-monospace,monospace;word-break:break-all;margin-top:9px;font-size:12px}
+.onboarding-choices{display:grid;gap:12px;margin:8px 0}.onboarding-choices .btn{margin:0}
+.auth-card .checkline input{flex-shrink:0}
+@media(max-width:780px){.timetable-scroll{height:448px!important;max-height:448px!important}.timetable.weekly.fit-week{width:100%}.zoomline label{width:auto}}
