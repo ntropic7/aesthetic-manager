@@ -1,1 +1,20 @@
-{"id":"./","name":"온결 - 피부관리샵 운영","short_name":"온결","start_url":"./","scope":"./","display":"standalone","background_color":"#f6f8f7","theme_color":"#1d3736","lang":"ko","description":"피부관리샵 예약과 고객을 함께 관리하는 운영 앱","icons":[{"src":"./icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}]}
+{
+  "id": "./",
+  "name": "온결 매니저 - 예약·고객·매장 통합관리",
+  "short_name": "온결 매니저",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f8f7",
+  "theme_color": "#1d3736",
+  "lang": "ko",
+  "description": "예약부터 고객관리, 서비스 이력, 회원권·매출 및 마케팅까지 하나로 관리하는 매장 운영 앱",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
