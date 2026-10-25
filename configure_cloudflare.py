@@ -1,10 +1,10 @@
-"""Aesthetic Manager Cloudflare 업로드 ZIP 생성기 (Python 표준 라이브러리만 사용)."""
+"""온결 매니저 Cloudflare 업로드 ZIP 생성기 (Python 표준 라이브러리만 사용)."""
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
 import re
 
 ROOT = Path(__file__).resolve().parent
-print('Aesthetic Manager v0.9 Supabase 설정 → Pages 업로드용 ZIP 생성')
+print('온결 매니저 v1.1 Supabase 설정 → Pages 업로드용 ZIP 생성')
 url = input('Supabase Project URL (https://xxx.supabase.co): ').strip().rstrip('/')
 key = input('Supabase Publishable key (sb_publishable_...): ').strip()
 if not re.fullmatch(r'https://[a-z0-9-]+\.supabase\.co', url, re.I):
@@ -19,9 +19,10 @@ config = ("window.ONGEOL_CONFIG = Object.freeze({\n"
           "});\n")
 out = ROOT / 'aesthetic_manager_pages_configured.zip'
 with ZipFile(out, 'w', ZIP_DEFLATED) as z:
-    for f in sorted((ROOT / 'web').iterdir()):
+    for f in sorted((ROOT / 'web').rglob('*')):
         if f.is_file():
-            z.writestr(f.name, config if f.name == 'config.js' else f.read_bytes())
+            relative = f.relative_to(ROOT / 'web').as_posix()
+            z.writestr(relative, config if relative == 'config.js' else f.read_bytes())
 print('완료:', out)
 print('Cloudflare Pages → Direct Upload에서 이 ZIP을 올리면 됩니다.')
 print('주의: URL/Publishable key는 웹에 공개되는 값입니다. secret/service_role는 절대 입력하지 마세요.')
