@@ -64,6 +64,7 @@ try:
   page.locator('#shopNameInput').fill('테스트 스튜디오')
   page.locator('#firstStaffName').fill('가상 첫 직원')
   page.locator('#firstStaffPosition').fill('실장')
+  page.locator('#linkCreatorStaff').check()
   page.get_by_role('button',name='첫 직원과 함께 매장 개설').click()
   page.locator('#main').get_by_text('오늘 예약').wait_for()
   assert len(page.evaluate('window.__cloud.staff'))==1
@@ -74,15 +75,17 @@ try:
   page.get_by_text('③ 서비스·프로그램 관리').first.wait_for()
   assert page.get_by_text('공간·좌석',exact=False).count() >= 1
   assert page.get_by_text('등록된 직원 1명',exact=False).count()>=1
+  assert page.get_by_text('계정 연결됨 · 실제 계정 권한: 최고관리자',exact=False).count()>=1
+  page.locator('[data-extra="staffProfileEdit"]').first.click()
+  assert page.locator('#modalRoot').get_by_text('로그인 권한: 최고관리자').count()==1
+  assert page.locator('#editStaffRole').count()==0
+  page.locator('#modalRoot [data-act="closeModal"]').first.click()
   page.locator('[data-extra="staffProfileNew"]').first.click()
   page.locator('#staffProfileName').fill('가상 둘째 직원')
   page.locator('[data-extra="staffProfileSave"]').click()
   page.wait_for_timeout(100)
   assert len(page.evaluate('window.__cloud.staff'))==2
   assert page.get_by_text('가상 첫 직원 · 실장',exact=False).count()>=1
-  page.once('dialog',lambda d:d.accept())
-  page.locator('[data-extra="staffProfileLinkOwner"]').first.click()
-  page.wait_for_timeout(100)
   assert any(x.get('auth_user_id') == SUID for x in page.evaluate('window.__cloud.staff'))
 
   page.locator('[data-extra="serviceAdd"]').first.click()

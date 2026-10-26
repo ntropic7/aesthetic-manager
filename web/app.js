@@ -56,6 +56,7 @@ function ensureDemoState(){
  state.customers.forEach(c=>{c.events ||= [];c.history ||= [];c.concerns ||= [];c.precautions ||= [];c.tags ||= [];});
 }
 ensureDemoState();
+let settingsSection='shop';
 let view='customers',selectedCustomer='C001',customerTab='overview',customerMobileDetail=false,analysisResult=null,activeConsultCid='C001',aiCase='visit';
 const $=s=>document.querySelector(s);const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function save(){if(serverMode()){if(remote.role==='therapist'){toast('직원 계정은 현재 조회 전용이야. 상세 업무별 권한 적용 후 편집이 가능해져.');return;}remote.write(state);return}try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){toast('저장공간이 제한된 환경입니다.')}}
@@ -335,26 +336,40 @@ function renderCampaigns(){return pane('캠페인',`<div class="liststack">${sta
 function renderAnalytics(){const p=state.payments.filter(x=>!x.voided),gross=p.reduce((a,x)=>a+(Number(x.amount)||0),0),tc=state.treatments.filter(x=>!x.voided),no=state.reservations.filter(x=>x.status==='NO_SHOW'&&!x.archived).length,all=state.reservations.filter(x=>!x.archived),r=state.reservations.filter(x=>!x.archived&&x.status==='COMPLETED');const staff=STAFf.map(s=>({name:s,count:tc.filter(x=>x.staff===s).length,amount:p.filter(y=>state.reservations.find(x=>x.id===y.reservationId)?.staff===s).reduce((a,y)=>a+y.amount,0)}));
 return header('ANALYTICS','매출·운영 분석',serverMode()?'입력된 결제 내역 기준 · 실제 매장 저장 데이터':'입력된 결제 내역 기준 · 시연용 가상 데이터 포함')+`<div class="grid4">${stat('결제 입력 합계',won(gross),'환불·취소 처리 제외')}${stat('완료된 서비스',r.length+'건','서비스 기록 확정')}${stat('노쇼 비중',all.length?Math.round(no/all.length*100)+'%':'0%','예약 상태 기준')}${stat('방문 이력 보유',state.customers.filter(x=>x.last).length+'명','고객 수 중')}</div>`+pane('직원별 실적',`<div class="liststack">${staff.map(x=>rowAction(esc(x.name),`서비스 ${x.count}건 · 입력된 결제 매출 ${won(x.amount)}`)).join('')}</div>`)+pane('최근 결제 및 취소',`<div class="liststack">${state.payments.slice().reverse().slice(0,12).map(x=>rowAction(`${esc(customer(x.cid)?.name)} · ${won(x.amount)}`,`${x.date||''} · ${x.type} · ${x.voided?'취소됨':'유효'}`,x.voided?'':xbutton('결제 취소','paymentVoid',x.id))).join('')||'<div class="empty">결제 기록이 없습니다.</div>'}</div><div style="margin-top:12px">${xbutton('＋ 결제 직접 입력','paymentNew','', 'primary')}</div>`);
 }
+const SETTINGS_CATEGORIES=[
+ {id:'shop',symbol:'⌂',label:'매장 정보',hint:'매장명 · 공간 · 운영 정책'},
+ {id:'staff',symbol:'♙',label:'직원 관리',hint:'직원 · 계정 권한'},
+ {id:'services',symbol:'▣',label:'서비스 관리',hint:'프로그램 · 가격 · 소요시간'},
+ {id:'accounts',symbol:'⇄',label:'계정·승인',hint:'연결 요청 · 초대 코드'},
+ {id:'privacy',symbol:'◇',label:'개인정보 보호',hint:'처리 안내 · 계약 기록'},
+ {id:'advanced',symbol:'⚙',label:'데이터·연동',hint:'백업 · 외부 API'}
+];
 function renderSettings(){
- const shopPane=pane('① 매장 정보 관리',`<div class="twocol"><div class="info"><label>매장 이름</label><strong>${esc(state.shopConfig.name)}</strong></div><div class="info"><label>주차 지원</label><strong>${state.shopConfig.parkingMinutes}분</strong></div><div class="info"><label>취소 안내 기준</label><strong>${state.shopConfig.cancelHours}시간 전</strong></div><div class="info"><label>연동</label><strong>${serverMode()?'Supabase 연결':'로컬 시연'}</strong></div></div>
- <div class="sectionline"><h3>공간·관리실·좌석</h3>${state.rooms.map(r=>`<span class="setting-chip">${esc(r)}</span>`).join('')}</div>
- <div style="margin-top:12px">${xbutton('매장 정보 수정','configEdit','','primary')} ${xbutton('＋ 공간·좌석 추가','roomNew','','small')}</div>`);
- const servicesPane=pane('③ 서비스·프로그램 관리',`<div class="liststack">${state.services.map(s=>rowAction(esc(s.name),`${s.minutes}분 · ${won(s.price)}`,xbutton('수정','serviceEdit',s.id))).join('')}</div><div style="margin-top:12px">${xbutton('＋ 프로그램 추가','serviceAdd','','primary')}</div>`);
- const adminPane=pane('④ 계정·매장 연결 승인',`${serverMode()?renderShopJoinManagement():'<p class="fineprint">서버 연결 시 사용할 수 있습니다.</p>'}`);
- const backupPane=pane('⑤ 데이터 백업·복구',`<p class="fineprint">${serverMode()?'매장 데이터는 Supabase에 저장됩니다. 무료 플랜은 자동 백업이 제공되지 않습니다.':'브라우저에 저장된 시연 데이터입니다.'}</p>${xbutton('JSON 백업 내보내기','backupExport')} ${xbutton('JSON 백업 불러오기','backupImport')} ${serverMode()?'':button('가상 데이터 초기화','resetDemo','danger small')}<input type="file" id="backupFile" accept="application/json,.json" style="display:none">`);
- const apiPane=pane('⑥ 외부 연동·AI',`<div class="callout">LLM/STT·메시징 외부 API 키는 서버 환경변수로만 관리합니다. 현재 미연결 상태입니다.</div>`);
- const docs=remote.privacy||{},done=!!(docs.processing_agreement&&docs.shop_privacy_responsibility);
- const selfStaff=(remote.staff||[]).find(x=>x.auth_user_id===remote.user?.id);
- const privacyPane=pane('⑦ 개인정보·처리위탁 관리',`
-  <div class="notice"><b>법률 검토 전 초안 · 실고객 입력 금지</b><br>현재 구조는 매장별 JSONB 업무데이터로, 완전한 직원별 권한·민감정보 세분화·감사로그가 아직 미완성이야.</div>
-  <div class="detail-row"><b>매장 처리위탁 계약 기록</b><span>${docs.processing_agreement?'관리자 확인 기록 있음':'미확인'}</span></div>
-  <div class="detail-row"><b>매장 개인정보 취급 책임 확인</b><span>${docs.shop_privacy_responsibility?'관리자 확인 기록 있음':'미확인'}</span></div>
-  ${selfStaff?xbutton('내 직원정보 처리 안내 확인','privacyStaffSelfAck',selfStaff.id,'small'):''}
-  <p class="fineprint">위 버튼은 직원 본인이 로그인하여 고지 사항을 확인했다는 기록이야. 직원 이름만 등록할 때 모든 경우에 별도 동의가 필요한 것은 아니야.</p>
-  <p class="fineprint"><a href="./legal/dpa.html" target="_blank" rel="noopener">처리위탁 계약 검토용 초안</a> · <a href="./legal/privacy.html" target="_blank" rel="noopener">플랫폼 개인정보 처리방침 초안</a> · <a href="./legal/terms.html" target="_blank" rel="noopener">이용약관 초안</a></p>
-  ${remote.role==='owner'&&!done?'<label class="checkline"><input type="checkbox" id="shopPrivacyAck"> 매장 책임과 처리위탁 계약 초안을 확인했습니다. 법률 검토 후 정식 문서로 재체결해야 함을 이해합니다.</label>'+xbutton('확인 기록 저장','privacyShopAccept','','primary'):''}
-  <p class="fineprint">고객 기본정보 입력 시 계약이행 또는 증빙된 동의 근거를 기록해. 민감정보·녹음·사진·광고성 발송은 별도 검토가 필요해.</p>`);
- return header('SETTINGS','매장·시스템 설정','매장정보 → 직원·직책 → 프로그램 → 계정 승인 → 데이터·연동 → 개인정보')+shopPane+renderStaffManagement()+servicesPane+adminPane+backupPane+apiPane+privacyPane;
+ const shop=esc(state.shopConfig.name||remote.shopName||'매장 이름 미설정');
+ const shopPane=`<div class="settings-content-head"><div><span class="settings-kicker">STORE PROFILE</span><h2>매장 정보</h2><p>자주 바꾸는 매장 기본정보만 모았어요.</p></div>${xbutton('정보 수정','configEdit','','primary')}</div>
+ <div class="settings-summary-grid"><div class="settings-summary"><small>매장 이름</small><b>${shop}</b></div><div class="settings-summary"><small>주차 지원</small><b>${state.shopConfig.parkingMinutes}분</b></div><div class="settings-summary"><small>취소 안내 기준</small><b>${state.shopConfig.cancelHours}시간 전</b></div></div>
+ <div class="settings-subhead"><div><h3>공간·좌석</h3><p>예약에 사용할 관리실, 시술 공간, 좌석을 등록해요.</p></div>${xbutton('＋ 공간 추가','roomNew','','small')}</div>
+ <div class="settings-chip-list">${state.rooms.length?state.rooms.map(r=>`<span class="setting-chip">${esc(r)}</span>`).join(''):'<span class="fineprint">공간이 등록되지 않았어요.</span>'}</div>`;
+ const services=`<div class="settings-content-head"><div><span class="settings-kicker">SERVICES</span><h2>서비스·프로그램</h2><p>예약 가능 프로그램, 소요시간과 가격을 관리해요.</p></div>${xbutton('＋ 프로그램 추가','serviceAdd','','primary')}</div>
+ <div class="settings-entity-list">${state.services.length?state.services.map(s=>`<div class="settings-entity"><span class="settings-entity-icon">▣</span><div class="settings-entity-body"><strong>${esc(s.name)}</strong><small>${s.minutes}분 · ${won(s.price)}</small></div>${xbutton('수정','serviceEdit',s.id,'small')}</div>`).join(''):'<div class="settings-empty">등록된 서비스가 없어요. 프로그램을 먼저 추가해 주세요.</div>'}</div>`;
+ const accounts=`<div class="settings-content-head"><div><span class="settings-kicker">TEAM ACCESS</span><h2>계정·매장 연결</h2><p>개인 계정의 매장 참여를 확인하고 승인해요.</p></div></div>${serverMode()?renderShopJoinManagement():'<p class="fineprint">Supabase 연결 후 사용할 수 있어요.</p>'}`;
+ const docs=remote.privacy||{},done=!!(docs.processing_agreement&&docs.shop_privacy_responsibility),selfStaff=(remote.staff||[]).find(x=>x.auth_user_id===remote.user?.id);
+ const privacy=`<div class="settings-content-head"><div><span class="settings-kicker">DATA PRIVACY</span><h2>개인정보 보호</h2><p>개인정보 안내·위탁 기록 및 직원 본인 확인을 관리해요.</p></div></div>
+ <div class="settings-alert"><b>실고객 운영 전 확인 필요</b><p>현재 JSONB 기반 시범 버전으로 고객별 권한·접근 감사 기록 등이 완성되지 않았어요. 법률·보안 검토 전 실고객 정보는 입력하지 마세요.</p></div>
+ <div class="settings-check-row"><span>매장 처리위탁 계약 기록</span><b>${docs.processing_agreement?'관리자 확인 기록 있음':'미확인'}</b></div>
+ <div class="settings-check-row"><span>매장 개인정보 책임 확인</span><b>${docs.shop_privacy_responsibility?'관리자 확인 기록 있음':'미확인'}</b></div>
+ ${selfStaff?`<div class="settings-subhead">${xbutton('내 직원정보 처리 안내 확인','privacyStaffSelfAck',selfStaff.id,'small')}</div>`:''}
+ <p class="fineprint">직원 본인이 로그인해 안내를 확인한 이력과 관리자가 고지했다고 기록한 이력은 구별됩니다.</p>
+ <div class="settings-legal-links"><a href="./legal/dpa.html" target="_blank" rel="noopener">처리위탁 계약 초안 ↗</a><a href="./legal/privacy.html" target="_blank" rel="noopener">개인정보 처리방침 초안 ↗</a><a href="./legal/terms.html" target="_blank" rel="noopener">이용약관 초안 ↗</a></div>
+ ${remote.role==='owner'&&!done?'<label class="checkline"><input type="checkbox" id="shopPrivacyAck"> 매장 책임·처리위탁 초안을 확인했습니다. 법률 검토 후 정식 문서로 체결해야 함을 이해합니다.</label>'+xbutton('확인 기록 저장','privacyShopAccept','','primary'):''}`;
+ const advanced=`<div class="settings-content-head"><div><span class="settings-kicker">ADVANCED</span><h2>데이터·연동</h2><p>평소에는 건드릴 필요 없는 관리 기능이에요.</p></div></div>
+ <details class="settings-disclosure" open><summary>데이터 백업 및 복구 <span>›</span></summary><div class="settings-disclosure-body"><p>${serverMode()?'매장 데이터는 Supabase에 저장됩니다. 무료 플랜에는 자동 DB 백업이 없으므로 별도의 백업 전략이 필요해요.':'브라우저 내 시연 데이터입니다.'}</p><div class="settings-actions">${xbutton('JSON 내보내기','backupExport','','small')}${xbutton('JSON 불러오기','backupImport','','small')}<input type="file" id="backupFile" accept="application/json,.json" hidden></div></div></details>
+ <details class="settings-disclosure"><summary>외부 연동 및 AI <span>›</span></summary><div class="settings-disclosure-body"><p>LLM/STT 및 문자 발송 연동은 아직 활성화되지 않았어요. API Key는 서버 환경변수에만 저장해야 해요.</p><div class="settings-connection-status">● Supabase ${serverMode()?'연결 모드':'시연 모드'} · ○ AI 미연결 · ○ 메시징 미연결</div></div></details>`;
+ const tabs={shop:shopPane,staff:renderStaffManagement(),services,accounts,privacy,advanced};
+ const current=SETTINGS_CATEGORIES.some(x=>x.id===settingsSection)?settingsSection:'shop';
+ return header('WORKSPACE SETTINGS','매장 설정','매장 운영에 필요한 정보만 간결하게 관리하세요.')+`
+ <div class="settings-shell"><nav class="settings-side" aria-label="설정 항목">${SETTINGS_CATEGORIES.map(x=>`<button type="button" class="settings-nav-item ${current===x.id?'selected':''}" data-settings-section="${x.id}" ${current===x.id?'aria-current="page"':''}><span class="settings-nav-icon" aria-hidden="true">${x.symbol}</span><span class="settings-nav-copy"><strong>${x.label}</strong><small>${x.hint}</small></span><span class="settings-nav-chevron">›</span></button>`).join('')}</nav>
+ <section class="settings-main" id="settingsDetail" aria-live="polite">${tabs[current]}</section></div>`;
 }
 
 function shiftConflict(candidate){return state.staffShifts.filter(s=>s.type==='OFF'&&s.staff===candidate.staff&&s.date===candidate.date).map(s=>({...s,time:'휴무',staff:s.staff}))[0]}
@@ -388,39 +403,32 @@ function showPhoto(cid){if(!consentCheck(cid,'photoConsent'))return;window._phot
 function comparePhotos(cid){const ids=[formValue('photoBefore'),formValue('photoAfter')],images=ids.map(id=>state.photos.find(x=>x.id===id));if(images.some(x=>!x)||ids[0]===ids[1])return toast('서로 다른 두 사진을 선택하세요.');openModal(`<h2>사진 비교</h2><div class="compare-side">${images.map(x=>`<div><img src="${esc(x.dataUrl)}" alt="${x.kind}"><p>${esc(x.date)} ${x.kind}</p></div>`).join('')}</div><div class="fineprint">촬영 조건을 동일하게 맞추어 비교해야 합니다. AI 의료 진단 기능은 아닙니다.</div>`)}
 function showMember(cid=''){openModal(`<h2>회원권 발행/판매</h2>${mselect('고객','mbCid',state.customers.map(c=>c.id),cid||state.customers[0]?.id)}${mfield('회원권 이름','mbName','기본 케어 10회권')}${mfield('총 횟수','mbTotal',10,'number')}${mfield('유효기간','mbExpire',dateAdd(TODAY(),365),'date')}${mfield('결제 금액 (증정 시 0)','mbAmount',0,'number')}${mselect('결제수단','mbPayType',['CARD','CASH','TRANSFER','GIFT'],'CARD')}${modalFooter('membershipSave')}`)}
 function saveMember(){const cid=formValue('mbCid'),c=customer(cid),total=Number(formValue('mbTotal')),amount=Number(formValue('mbAmount'));if(!c||total<=0||!Number.isInteger(total)||amount<0)return toast('값을 확인하세요.');if(c.membership&&c.membership.used<c.membership.total&&!confirm('기존 잔여 회원권을 새 권으로 대체할까요? 기존 이력은 감사 로그로만 남습니다.'))return;c.membership={name:formValue('mbName'),total,used:0,expire:formValue('mbExpire')};state.membershipUsages.push({id:eid('MU'),cid,delta:total,type:'ISSUE',date:TODAY(),note:formValue('mbName')});if(amount>0)state.payments.push({id:eid('PY'),cid,amount,type:formValue('mbPayType'),memo:'회원권 판매: '+formValue('mbName'),date:TODAY(),voided:false});state.audits.push({action:'MEMBERSHIP_ISSUE',cid,amount,total,date:TODAY()});save();closeModal();render();toast('회원권 발행이 완료되었습니다.')}
-function positionOptions(selected=''){
- return `<option value="">직책 없음</option>`+(remote.positions||[]).map(p=>`<option value="${esc(p.id)}" ${p.id===selected?'selected':''}>${esc(p.name)}</option>`).join('');
+function staffTitleSuggestions(){return `<datalist id="staffTitleSuggestions">${(remote.positions||[]).map(p=>`<option value="${esc(p.name)}"></option>`).join('')}</datalist>`;}
+function staffTitleValue(profile){return (remote.positions||[]).find(p=>p.id===profile?.position_id)?.name||profile?.title||'';}
+async function resolveStaffPosition(input){
+ const name=String(input||'').trim();
+ if(!name)return null;
+ const found=(remote.positions||[]).find(p=>p.name.trim().toLocaleLowerCase('ko')===name.toLocaleLowerCase('ko'));
+ if(found)return found.id;
+ // Re-use the existing Supabase positions table as a private lookup; no separate master-data UI.
+ try{const id=await remote.addPosition(name);remote.positions.push({id,name});return id;}
+ catch(e){
+  // Concurrent creation: refresh the server lookup before surfacing an error.
+  await remote.listStaff();const retry=remote.positions.find(p=>p.name.trim().toLocaleLowerCase('ko')===name.toLocaleLowerCase('ko'));
+  if(retry)return retry.id;
+  throw e;
+ }
 }
 function renderStaffManagement(){
- if(!serverMode())return '';
- const admin=remote.role==='owner';
- const roleName={owner:'최고관리자',manager:'관리자',therapist:'직원 (현재 조회 전용)'};
- const profiles=remote.staff||[],positions=remote.positions||[];
+ if(!serverMode())return '<div class="settings-empty">서버 연결 후 직원 계정을 관리할 수 있어요.</div>';
+ const admin=remote.role==='owner',profiles=remote.staff||[];
+ const roleName={owner:'최고관리자',manager:'관리자',therapist:'직원 (조회 전용)'};
  const account=remote.user?.email||'로그인 계정';
- const accountPhone=remote.user?.user_metadata?.contact_phone||'';
- return pane('② 직원·직책 관리',`
-   <div class="notice"><b>현재 로그인:</b> ${esc(account)} · 권한 <b>${roleName[remote.role]||'알 수 없음'}</b><br>
-   <span class="fineprint">계정 표시는 관리자이며 실제 직원으로 자동 등록되지 않아. 공용 관리자 계정으로 모든 직원의 예약을 등록할 수 있지만 조작한 개인을 추적하려면 직원별 이메일 계정이 필요해.</span></div>
-   <div class="sectionline"><h3>등록된 직원 ${profiles.length}명</h3></div>
-   <div class="liststack">${profiles.length?profiles.map(x=>rowAction(`${esc(staffLabel(x.name))} ${x.active?'':'(비활성)'}`,
-      `${x.auth_user_id===remote.user?.id?'내 관리자 계정 연결됨 · 권한 최고관리자':`계정 연결 시 권한: ${roleName[x.access_role]} · ${x.auth_user_id?'별도 계정 연결됨':'로그인 계정 없음'}`}`,
-      admin?`${x.active&&!x.auth_user_id&&!profiles.some(p=>p.auth_user_id===remote.user?.id)?xbutton('내 관리자계정 연결','staffProfileLinkOwner',x.id):''}${x.auth_user_id===remote.user?.id?xbutton('내 계정 연결 해제','staffProfileUnlinkOwner',x.id):''}${xbutton('직원 수정','staffProfileEdit',x.id)}${xbutton('삭제','staffProfileDelete',x.id,'danger small')}`:''
-   )).join(''):'<div class="empty">등록된 직원이 없습니다. 신규 매장은 첫 직원이 필수입니다.</div>'}</div>
-   ${admin?`<div style="margin-top:14px">${xbutton('＋ 직원 신규','staffProfileNew','','primary')}</div>`:''}
-   <div class="fineprint">직책은 선택사항이야. 직원에 직책을 연결하면 화면에 <b>이름 · 직책</b>을 함께 표시해. 직책이나 직원이름을 변경해도 과거 예약 담당자 문자열은 자동 변경하지 않아.</div>
- <div class="sectionline"><h3>직책 관리</h3></div>
-   <div class="liststack">${positions.length?positions.map(x=>rowAction(esc(x.name),
-       `배정 직원 ${profiles.filter(st=>st.position_id===x.id).length}명`,
-       admin?xbutton('이름 수정','positionEdit',x.id):''
-   )).join(''):'<div class="empty">등록된 직책이 없어. 직원은 직책 없이도 등록 가능해.</div>'}</div>
-   ${admin?`<div style="margin-top:14px">${xbutton('＋ 직책 신규','positionNew','','primary')}</div>`:''}
- <div class="sectionline"><h3>개인 계정 설정 · 이메일 로그인</h3></div>
-    <div class="detail-row"><b>계정</b><span>${esc(account)}</span></div>
-    <div class="detail-row"><b>연락처 (선택·미인증)</b><span>${esc(accountPhone||'등록 안 됨')}</span></div>
-    ${xbutton('연락처 등록·수정','contactPhoneEdit','','small')}
-    <p class="fineprint">로그인은 이메일/비밀번호만 지원해. 이 연락처는 업무상 표시용이고 SMS 인증·로그인에 사용되지 않아.</p>
-    <p class="fineprint">직원 계정은 매장 연결 코드를 입력해 승인 요청 후 관리자가 연결해. 현재 JSONB DB 구조에서는 일반 직원은 조회 전용이며 관리자만 업무 수정이 가능해.</p>
- `);
+ const roleDescription=p=>!p.auth_user_id?'계정 연결 전':p.linked_role?`${roleName[p.linked_role]||'알 수 없음'} 권한`:'권한 확인 필요';
+ return `<div class="settings-content-head"><div><span class="settings-kicker">OUR TEAM</span><h2>직원 관리 <span class="settings-count">${profiles.length}</span></h2><p>이름만 등록해도 돼요. 직책은 필요할 때 직원 정보에 적어 주세요.</p></div>${admin?xbutton('＋ 직원 추가','staffProfileNew','','primary'):''}</div>
+ <div class="settings-entity-list">${profiles.length?profiles.map(p=>`<div class="settings-entity"><span class="settings-staff-avatar">${esc((p.name||'직')[0])}</span><div class="settings-entity-body"><strong>${esc(staffLabel(p.name))} ${!p.active?'<span class="settings-state">비활성</span>':''}</strong><small>${esc(roleDescription(p))}${p.auth_user_id===remote.user?.id?' · 내 계정':''}</small></div>${admin?`<div class="settings-entity-actions">${xbutton('수정','staffProfileEdit',p.id,'small')}${xbutton('삭제','staffProfileDelete',p.id,'danger small')}</div>`:''}</div>`).join(''):'<div class="settings-empty">첫 직원을 등록해 주세요.</div>'}</div>
+ <div class="settings-help"><strong>직원 계정을 연결하려면?</strong><p>직원이 자신의 이메일 계정으로 가입하고 연결 코드를 입력하면, 관리자가 승인하면서 등록된 직원과 계정을 연결할 수 있어요. <button type="button" class="settings-inline-link" data-settings-section="accounts">계정·승인으로 이동 →</button></p></div><div class="settings-help"><strong>직책과 로그인 권한은 별개예요.</strong><p>예를 들어 직책은 ‘실장’이어도 연결한 계정의 권한은 ‘관리자’일 수 있어요. 계정이 없다면 매장 관리자 계정으로 담당 직원을 선택해 예약을 관리할 수 있어요.</p></div>
+ <details class="settings-disclosure"><summary>내 로그인 계정 정보 <span>›</span></summary><div class="settings-disclosure-body"><div class="settings-check-row"><span>이메일</span><b>${esc(account)}</b></div><div class="settings-check-row"><span>로그인 권한</span><b>${roleName[remote.role]||'알 수 없음'}</b></div>${xbutton('연락처 수정','contactPhoneEdit','','small')}<p>연락처는 선택사항이며, 이메일만 로그인에 사용해요.</p></div></details>`;
 }
 async function acknowledgeStaffPrivacy(staffId){
  if(!confirm('직원 개인정보 처리 안내를 직접 확인했다는 기록을 남길까요? (별도 동의가 필요한 처리를 승인하는 의미는 아닙니다.)'))return;
@@ -465,7 +473,7 @@ function openJoinReview(id){
  <label class="field">연결 방법<select class="select" id="joinAssignMode"><option value="existing" ${staff.length?'':'disabled'}>기존 직원 프로필에 연결</option><option value="new" ${staff.length?'':'selected'}>새 직원을 등록하여 연결</option></select></label>
  <label class="field">기존 직원<select class="select" id="joinAssignStaff">${options}</select></label>
  ${mfield('신규 직원 이름','joinNewStaffName','')}
- <label class="field">신규 직원 직책(선택)<select class="select" id="joinNewPosition">${positionOptions()}</select></label>
+ <label class="field">신규 직원 직책(선택)<input class="input" id="joinNewPosition" list="staffTitleSuggestions" placeholder="직책 없어도 가입할 수 있어요">${staffTitleSuggestions()}</label>
  <label class="field">신규 직원 로그인 권한<select class="select" id="joinNewRole"><option value="therapist">직원(조회 전용)</option><option value="manager">관리자</option></select></label>
  <p class="fineprint">직책은 업무 표시용, 로그인 권한은 데이터 접근용입니다. 요청한 계정은 승인 전에는 매장 데이터에 접근할 수 없습니다.</p>
  <div class="actions">${xbutton('승인','joinApprove',id,'primary')} ${xbutton('취소','closeModal')}</div>`);
@@ -475,7 +483,7 @@ async function reviewJoin(id,action){
  if(action==='approve'){
   const mode=formValue('joinAssignMode');
   if(mode==='existing'){params.p_staff=formValue('joinAssignStaff')||null;if(!params.p_staff)return toast('연결할 직원을 선택하세요.');}
-  else{params.p_staff_name=formValue('joinNewStaffName');params.p_position=formValue('joinNewPosition')||null;params.p_access_role=formValue('joinNewRole');
+  else{params.p_staff_name=formValue('joinNewStaffName');params.p_position=await resolveStaffPosition(formValue('joinNewPosition'));params.p_access_role=formValue('joinNewRole');
    if(!params.p_staff_name.trim())return toast('신규 직원 이름을 입력하세요.');}
  }else if(!confirm('이 가입 요청을 거절하시겠습니까?'))return;
  try{await remote.reviewJoin(params);await remote.read().then(data=>{state=data;ensureExtendedState()});
@@ -529,16 +537,16 @@ async function refreshStaffView(){
 function openNewStaff(){
  if(!serverMode()||remote.role!=='owner')return toast('최고관리자 권한이 필요해.');
  openModal(`<h2>직원 신규 등록</h2>${mfield('직원 이름 *','staffProfileName')}
- <div class="field"><label>직책 (선택)</label><select class="select" id="staffProfilePosition">${positionOptions()}</select></div>
+ <div class="field"><label for="staffProfilePosition">직책 (선택)</label><input class="input" id="staffProfilePosition" list="staffTitleSuggestions" maxlength="40" placeholder="예: 원장, 실장, 담당자">${staffTitleSuggestions()}</div>
  <div class="field"><label>이 직원이 이메일 계정을 연결할 경우의 권한</label><select class="select" id="staffProfileRole"><option value="therapist">직원 (현재 조회 전용)</option><option value="manager">관리자 (업무 편집)</option></select></div>
  <label class="checkline"><input type="checkbox" id="staffNoticeProvided"> 이 직원에게 명단 등록의 목적·이용범위·보유기간을 안내했음 (관리자 확인 기록)</label>
  <p class="fineprint">직원 이름·직책의 업무상 처리는 항상 동의가 필요한 것은 아니야. 이 체크는 직원 본인의 동의가 아니라 **매장 관리자 확인**으로만 기록해.</p>
  <p class="fineprint">직책이 없어도 직원 이름만으로 등록해. 로그인 계정은 따로 만들어야 하며, 필요할 때 연결해.</p>${modalFooter('staffProfileSave')}`);
 }
 async function saveNewStaff(){
- const name=formValue('staffProfileName'),positionId=formValue('staffProfilePosition')||null,role=formValue('staffProfileRole');
+ const name=formValue('staffProfileName'),role=formValue('staffProfileRole');
  if(!name)return toast('직원 이름을 입력해 줘.');
- try{const noticeProvided=!!$('#staffNoticeProvided')?.checked;const staffId=await remote.addStaff(name,positionId,role);
+ try{const noticeProvided=!!$('#staffNoticeProvided')?.checked;const positionId=await resolveStaffPosition(formValue('staffProfilePosition'));const staffId=await remote.addStaff(name,positionId,role);
   if(noticeProvided)await remote.recordPrivacyEvidence('staff',staffId,'staff_notice','contract','documented_notice',PRIVACY_DOC_VERSION,'매장 관리자 고지 확인');
   await refreshStaffView();toast('직원 프로필이 추가됐어. 고지 여부는 직원 본인 동의로 표시되지 않아.');}
  catch(e){toast('직원 등록 실패: '+e.message)}
@@ -546,14 +554,23 @@ async function saveNewStaff(){
 function openEditStaff(id){
  if(remote.role!=='owner')return;
  const x=remote.staff.find(a=>a.id===id);if(!x)return;
+ const isOwnerLinked=x.auth_user_id&&x.linked_role==='owner';
+ const currentRole=x.linked_role||x.access_role;
+ const roleEditor=isOwnerLinked
+  ?'<div class="notice"><b>로그인 권한: 최고관리자</b><br>이 직원은 최고관리자 계정과 연결되어 있어요. 직원 정보 수정으로 최고관리자 권한이 변경되지 않습니다.</div>'
+  :`<div class="field"><label>${x.auth_user_id?'연결된 계정의 실제 권한':'향후 계정 연결 시 기본 권한'}</label><select class="select" id="editStaffRole"><option value="therapist" ${currentRole==='therapist'?'selected':''}>직원 (현재 이용 제한)</option><option value="manager" ${currentRole==='manager'?'selected':''}>관리자 (업무 편집)</option></select></div>`;
  openModal(`<h2>직원 수정 · ${esc(x.name)}</h2>${mfield('직원 이름 *','editStaffName',x.name)}
- <div class="field"><label>직책 (선택)</label><select class="select" id="editStaffPosition">${positionOptions(x.position_id)}</select></div>
- <div class="field"><label>연결 계정 권한</label><select class="select" id="editStaffRole"><option value="therapist" ${x.access_role==='therapist'?'selected':''}>직원 (현재 조회 전용)</option><option value="manager" ${x.access_role==='manager'?'selected':''}>관리자 (업무 편집)</option></select></div>
+ <div class="field"><label for="editStaffPosition">직책 (선택)</label><input class="input" id="editStaffPosition" list="staffTitleSuggestions" maxlength="40" value="${esc(staffTitleValue(x))}" placeholder="없어도 괜찮아요">${staffTitleSuggestions()}</div>
+ ${roleEditor}
  <label class="checkline"><input id="editStaffActive" type="checkbox" ${x.active?'checked':''}> 재직/활성</label>
- <div class="notice">직원 이름 변경 시 이미 생성된 과거 예약의 담당자 문자열은 자동 변환되지 않아.</div>${modalFooter('staffProfileUpdate',id)}`);
+ <div class="notice">기존 예약·이력과 연결된 직원의 이름은 먼저 담당자 이관 후 변경해 주세요.</div>${modalFooter('staffProfileUpdate',id)}
+ ${x.auth_user_id===remote.user?.id?`<div class="sectionline">${xbutton('내 관리자계정 연결 해제','staffProfileUnlinkOwner',id,'small')}</div>`:!x.auth_user_id&&!remote.staff.some(p=>p.auth_user_id===remote.user?.id)?`<div class="sectionline">${xbutton('내 관리자계정 연결','staffProfileLinkOwner',id,'small')}</div>`:''}`);
 }
 async function updateStaff(id){
- try{await remote.editStaff(id,formValue('editStaffName'),formValue('editStaffPosition')||null,formValue('editStaffRole'),$('#editStaffActive').checked);
+ const staff=remote.staff.find(x=>x.id===id);
+ if(!staff)return toast('직원을 찾을 수 없어.');
+ const accessRole=$('#editStaffRole')?.value||staff.access_role;
+ try{const newName=formValue('editStaffName');if(newName!==staff.name && [...state.reservations,...(state.treatments||[]),...(state.staffShifts||[])].some(x=>x.staff===staff.name))return toast('연결된 예약·이력이 있는 직원은 먼저 담당자 이관이 필요해요.');const positionId=await resolveStaffPosition(formValue('editStaffPosition'));await remote.editStaff(id,newName,positionId,accessRole,$('#editStaffActive').checked);
  state=await remote.read();ensureExtendedState();await refreshStaffView();toast('직원 정보가 변경됐어.');}
  catch(e){toast('변경 실패: '+e.message)}
 }
@@ -768,6 +785,7 @@ document.addEventListener('click',e=>{if(handleExtraClick(e))return;
  const detail=e.target.closest('[data-res-open]');if(detail){openReservationDetail(detail.dataset.resOpen);return}
  const ra=e.target.closest('[data-res-action]');if(ra){reservationAction(ra.dataset.resAction,ra.dataset.resId);return}
  const booking=e.target.closest('[data-booking]');if(booking){if(Date.now()<suppressBookingClickUntil)return;openReservationDetail(booking.dataset.booking);return}
+ const setting=e.target.closest('[data-settings-section]');if(setting){settingsSection=setting.dataset.settingsSection;render();return}
  const n=e.target.closest('[data-nav]');if(n){setView(n.dataset.nav);return}
  const c=e.target.closest('[data-customer]');if(c){closeModal();selectedCustomer=c.dataset.customer;customerTab='overview';customerMobileDetail=true;setView('customers');return}
  const t=e.target.closest('[data-custtab]');if(t){customerTab=t.dataset.custtab;render();return}
