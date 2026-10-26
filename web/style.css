@@ -156,3 +156,43 @@
 .onboarding-choices{display:grid;gap:12px;margin:8px 0}.onboarding-choices .btn{margin:0}
 .auth-card .checkline input{flex-shrink:0}
 @media(max-width:780px){.timetable-scroll{height:448px!important;max-height:448px!important}.timetable.weekly.fit-week{width:100%}.zoomline label{width:auto}}
+
+/* v1.2 distinct sign-up / login / email-confirmation experience */
+.auth-card.auth-screen{gap:13px;padding:31px 32px 28px;max-width:485px;text-align:left;animation:authEnter .18s ease-out}
+.auth-screen .auth-brand{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.auth-screen .auth-brand-mark{width:43px;height:43px;border-radius:14px;display:grid;place-items:center;background:#e3f1e8;color:#25715b;font-size:24px}
+.auth-screen .auth-brand strong{display:block;font-size:16px;color:#224f41}
+.auth-screen .auth-brand small{display:block;margin-top:2px;font-size:11px;color:#81968b}
+.auth-screen .auth-mode-badge{display:table;width:max-content;padding:5px 10px;border-radius:30px;font-size:11px;font-weight:800;color:#176a4f;background:#dff1e6;letter-spacing:.02em}
+.auth-screen .auth-mode-badge.subtle{background:#edf3ef;color:#608072}
+.auth-screen .auth-heading{font-size:25px;line-height:1.25;color:#183c32;font-weight:850;margin:0;letter-spacing:-.035em}
+.auth-screen .auth-description{font-size:13px;line-height:1.7;color:#627b70;margin:0 0 4px}
+.auth-screen .auth-section{display:flex;flex-direction:column;gap:8px}
+.auth-screen .auth-section label{font-size:12px;color:#395c4d;font-weight:780;margin-top:5px}
+.auth-screen .auth-section input{min-height:45px;padding:10px 12px;border-color:#d3e1d7}
+.auth-screen .auth-section input:focus{outline:2px solid #8dc7a6;outline-offset:1px}
+.auth-screen .auth-main-button{min-height:48px!important;font-size:14px!important;font-weight:800;letter-spacing:-.015em;margin-top:9px!important}
+.auth-screen .auth-mode-switch{border-top:1px solid #e8efea;padding-top:14px;margin-top:6px;text-align:center;color:#728679;font-size:12px}
+.auth-screen .auth-link-button{border:0;background:transparent;color:#277b5c;font-size:13px;font-weight:800;cursor:pointer;padding:6px 2px;text-decoration:underline;text-underline-offset:3px}
+.auth-screen .auth-link-button:hover{color:#14533e}
+.auth-screen .auth-steps{display:flex;justify-content:space-between;gap:5px;padding:10px 8px;border:1px solid #d7e7dc;border-radius:11px;background:#f5faf6;font-size:11px;font-weight:720;color:#829489}
+.auth-screen .auth-steps span.on{color:#1f7455}
+.auth-screen-signup{border-top:5px solid #2d8966!important;background:linear-gradient(165deg,#f7fcf8 0%,#ffffff 33%)!important}
+.auth-screen .auth-field-hint{color:#809188!important;font-size:11px!important}
+.auth-screen .auth-footer-note{font-size:11px;color:#809187;line-height:1.6;border-top:1px solid #eff3ef;padding-top:11px}
+.auth-screen .auth-inline-error{min-height:0;font-size:12px;line-height:1.55;margin:4px 0 0!important;font-weight:700}
+.auth-screen .auth-inline-error:empty{display:none}
+.auth-screen .auth-success-symbol{width:66px;height:66px;background:#e0f2e6;color:#237659;border-radius:50%;display:grid;place-items:center;font-size:34px;font-weight:800;margin:10px 0}
+.auth-screen-pending .auth-mode-badge{background:#e2f3e8}
+.auth-screen .auth-email-address{padding:14px 16px;border:1px solid #bcdccb;border-radius:12px;background:#eff8f1;display:flex;flex-direction:column;gap:5px;overflow-wrap:anywhere}
+.auth-screen .auth-email-address span{font-size:11px;color:#56806b}
+.auth-screen .auth-email-address strong{font-size:16px;color:#224f42}
+.auth-screen .auth-instructions{padding:14px;border:1px solid #e0e9e2;background:#fafcf9;border-radius:13px;display:grid;gap:10px}
+.auth-screen .auth-instructions>b{font-size:13px;color:#305744}
+.auth-screen .auth-instructions>div{display:flex;align-items:center;gap:10px;font-size:12px;color:#4f6b5c}
+.auth-screen .auth-instructions>div span{width:23px;height:23px;flex:0 0 23px;display:grid;place-items:center;border-radius:50%;background:#e1eee5;color:#28684d;font-weight:900}
+.auth-screen .auth-help{padding:10px 12px;border-radius:9px;background:#f8f5ec;color:#7b7159;font-size:11px;line-height:1.6}
+.auth-screen .auth-secondary-button{margin:0!important;background:#fff;border:1px solid #dce8df;color:#456a57;font-weight:720}
+.auth-screen-pending>.auth-link-button{margin-top:0!important;justify-self:center}
+@keyframes authEnter{from{opacity:.4;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:480px){.auth-card.auth-screen{padding:22px 19px 23px;max-height:95dvh;overflow:auto;gap:11px}.auth-screen .auth-heading{font-size:22px}.auth-screen .auth-steps{font-size:10px}}

@@ -10,7 +10,7 @@ test('product name is consistent across PWA, HTML, and login', () => {
   assert.equal(meta.short_name, '온결 매니저');
   assert.match(index, /<title>온결 매니저/);
   assert.match(index, /<b>온결 매니저<\/b>/);
-  assert.match(app, /✳ 온결 매니저/);
+  assert.match(app, /<strong>온결 매니저<\/strong>/);
   assert.match(app, /document.querySelector\('\.brand b'\)\.textContent=remote\.shopName/);
 });
 test('main labels are multi-industry, while business identifiers remain compatible', () => {

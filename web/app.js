@@ -787,26 +787,88 @@ document.addEventListener('pointercancel',()=>{if(pointerBooking?.card?.isConnec
 async function enterRemote(){
   const shell=document.createElement('div');shell.className='auth-backdrop';shell.id='loginShell';document.body.appendChild(shell);
   const displayMessage = (msg,bad=false)=>{const el=shell.querySelector('#authMessage');if(el){el.style.color=bad?'#af4242':'#257259';el.textContent=msg}};
-  function authForm(mode='login'){
-    shell.innerHTML=`<div class="auth-card wide-auth"><h2>✳ 온결 매니저</h2><p>예약 기반 매장 통합관리 · 이메일 로그인</p>
+  // Distinct screens for returning members, sign-up and email confirmation.
+  function authBrand(){return `<div class="auth-brand"><span class="auth-brand-mark" aria-hidden="true">✳</span><div><strong>온결 매니저</strong><small>예약 기반 매장 통합관리</small></div></div>`;}
+  function authForm(mode='login',presetEmail=''){
+    const signup=mode==='signup';
+    shell.innerHTML=`<div class="auth-card wide-auth auth-screen ${signup?'auth-screen-signup':'auth-screen-login'}">
+      ${authBrand()}
+      ${signup?`<div class="auth-mode-badge">신규 회원가입</div>
+        <h1 class="auth-heading">온결 매니저 시작하기</h1>
+        <p class="auth-description">새로운 계정을 만들고 이메일을 인증한 뒤, 신규 매장을 등록하거나 기존 매장에 참여할 수 있어요.</p>
+        <div class="auth-steps" aria-label="회원가입 진행 단계"><span class="on">1. 계정 만들기</span><span>2. 이메일 인증</span><span>3. 매장 연결</span></div>`:
+        `<div class="auth-mode-badge subtle">기존 회원 로그인</div><h1 class="auth-heading">매장 계정 로그인</h1>
+        <p class="auth-description">등록된 이메일과 비밀번호로 접속해 매장 업무를 이어가세요.</p>`}
       <form id="authForm" class="auth-section">
-        <label>이메일</label><input id="authEmail" class="input" type="email" required autocomplete="username" placeholder="manager@example.com">
-        <label>비밀번호</label><input id="authPassword" class="input" type="password" required minlength="6" autocomplete="${mode==='signup'?'new-password':'current-password'}">
-        <button class="btn primary" type="submit">${mode==='signup'?'회원가입':'로그인'}</button>
-        <button class="btn small" id="toggleAuth" type="button">${mode==='signup'?'이미 계정 있음 · 로그인':'이메일로 계정 만들기'}</button>
+        <label for="authEmail">이메일 주소</label><input id="authEmail" class="input" type="email" required autocomplete="email" placeholder="name@example.com" value="${esc(presetEmail)}">
+        <label for="authPassword">비밀번호</label><input id="authPassword" class="input" type="password" required minlength="${signup?8:6}" autocomplete="${signup?'new-password':'current-password'}" placeholder="${signup?'8자 이상 입력':'비밀번호 입력'}">
+        ${signup?`<label for="authPasswordConfirm">비밀번호 확인</label><input id="authPasswordConfirm" class="input" type="password" required minlength="8" autocomplete="new-password" placeholder="비밀번호를 한 번 더 입력">
+          <p class="auth-field-hint">보안을 위해 8자 이상으로 설정해 주세요.</p>`:''}
+        <p class="auth-inline-error" id="authMessage" role="alert" aria-live="polite"></p>
+        <button class="btn primary auth-main-button" type="submit">${signup?'가입하고 인증 메일 받기':'로그인'}</button>
       </form>
-      <p id="authMessage" aria-live="polite"></p>
-      <p class="fineprint">신규 매장은 첫 직원 1명을 등록해야 개설돼요. 기존 매장 참여에는 관리자 승인이 필요합니다.</p></div>`;
-    shell.querySelector('#toggleAuth').onclick=()=>authForm(mode==='signup'?'login':'signup');
-    shell.querySelector('#authForm').addEventListener('submit',async e=>{e.preventDefault();const b=e.submitter;b.disabled=true;
-      try{const email=shell.querySelector('#authEmail').value.trim(),pass=shell.querySelector('#authPassword').value;
-        if(mode==='signup'){
+      <div class="auth-mode-switch">${signup?'이미 계정이 있으신가요?':'온결 매니저가 처음이신가요?'}
+        <button class="auth-link-button" id="toggleAuth" type="button">${signup?'로그인으로 돌아가기':'새 계정 만들기 →'}</button></div>
+      ${signup?`<p class="auth-footer-note">이메일 인증 후 서비스 이용약관과 개인정보 처리방침을 확인하게 됩니다.</p>`:''}
+    </div>`;
+    shell.querySelector('#toggleAuth').onclick=()=>authForm(signup?'login':'signup',shell.querySelector('#authEmail')?.value||'');
+    shell.querySelector('#authForm').addEventListener('submit',async e=>{
+      e.preventDefault();const b=e.submitter;const email=shell.querySelector('#authEmail').value.trim();const pass=shell.querySelector('#authPassword').value;
+      if(signup&&pass!==shell.querySelector('#authPasswordConfirm').value){displayMessage('비밀번호와 비밀번호 확인이 일치하지 않습니다.',true);shell.querySelector('#authPasswordConfirm').focus();return;}
+      b.disabled=true;b.textContent=signup?'가입 요청 중…':'로그인 중…';
+      try{
+        if(signup){
           const r=await remote.signup(email,pass);
-          if(!r?.access_token){displayMessage('가입 요청 완료. 이메일 인증 링크를 확인한 뒤 로그인해 줘.');return;}
+          if(!r?.access_token){emailConfirmationPending(email);return;}
         }else await remote.login(email,pass);
         await afterAuth();
-      }catch(ex){displayMessage('인증 오류: '+ex.message,true)}finally{if(b.isConnected)b.disabled=false}
+      }catch(ex){
+        if(!signup&&/email not confirmed|email_not_confirmed/i.test(String(ex.message))){emailConfirmationPending(email,true);return;}
+        displayMessage((signup?'회원가입':'로그인')+' 실패: '+ex.message,true);
+      }finally{if(b.isConnected){b.disabled=false;b.textContent=signup?'가입하고 인증 메일 받기':'로그인';}}
     });
+  }
+  function emailConfirmationPending(email,notConfirmed=false){
+    let resendCooldown=0;
+    shell.innerHTML=`<div class="auth-card wide-auth auth-screen auth-screen-pending">
+      ${authBrand()}
+      <div class="auth-success-symbol" aria-hidden="true">✉</div>
+      <div class="auth-mode-badge">이메일 인증 대기</div>
+      <h1 class="auth-heading">이메일을 확인해주세요</h1>
+      <p class="auth-description">${notConfirmed?'아직 이메일 인증이 완료되지 않았어요.':'회원가입 요청이 접수됐어요.'}<br>아래 이메일로 전달되는 인증 링크를 눌러주세요.</p>
+      <div class="auth-email-address"><span>인증할 이메일</span><strong>${esc(email)}</strong></div>
+      <div class="auth-instructions"><b>다음 순서로 진행해 주세요</b>
+        <div><span>1</span>메일함에서 가입 인증 메일 확인</div>
+        <div><span>2</span>메일 안의 <b>이메일 인증</b> 링크 클릭</div>
+        <div><span>3</span>인증 완료 후 온결 매니저에 로그인</div>
+      </div>
+      <div class="auth-help">메일이 보이지 않나요? 스팸함도 확인해 주세요. Supabase 기본 발송을 사용하면 메일 발신자가 ‘온결 매니저’로 보이지 않을 수 있어요.</div>
+      <p id="authMessage" class="auth-inline-error" role="status" aria-live="polite"></p>
+      <button type="button" id="resendVerification" class="btn primary auth-main-button">인증 메일 다시 보내기</button>
+      <button type="button" id="backToLogin" class="btn auth-secondary-button">로그인 화면으로</button>
+      <button type="button" id="correctEmail" class="auth-link-button">이메일 주소를 잘못 입력했나요?</button>
+    </div>`;
+    shell.querySelector('#backToLogin').onclick=()=>authForm('login',email);
+    shell.querySelector('#correctEmail').onclick=()=>authForm('signup',email);
+    shell.querySelector('#resendVerification').onclick=async()=>{
+      const button=shell.querySelector('#resendVerification');
+      if(Date.now()<resendCooldown)return displayMessage('메일 재발송 간격을 확인한 뒤 다시 시도해 주세요.',true);
+      button.disabled=true;button.textContent='재발송 요청 중…';
+      try{await remote.resendSignupEmail(email);resendCooldown=Date.now()+60000;displayMessage('인증 메일을 다시 요청했어요. 받은편지함과 스팸함을 확인해 주세요.');button.textContent='60초 후 다시 보낼 수 있어요';let remaining=60;const cooldownTimer=setInterval(()=>{if(!button.isConnected){clearInterval(cooldownTimer);return;}remaining-=1;if(remaining<=0){clearInterval(cooldownTimer);button.disabled=false;button.textContent='인증 메일 다시 보내기';}else button.textContent=`${remaining}초 후 다시 보낼 수 있어요`;},1000);}
+      catch(ex){displayMessage('재발송 실패: '+ex.message,true);button.disabled=false;button.textContent='인증 메일 다시 보내기';}
+    };
+  }
+  function authEmailVerified(){
+    shell.innerHTML=`<div class="auth-card wide-auth auth-screen auth-screen-verified">${authBrand()}
+      <div class="auth-success-symbol" aria-hidden="true">✓</div><div class="auth-mode-badge">이메일 인증 완료</div>
+      <h1 class="auth-heading">이메일 인증이 완료됐어요!</h1>
+      <p class="auth-description">이제 매장을 새로 만들거나 기존 매장에 연결해 사용할 수 있어요.</p>
+      <button class="btn primary auth-main-button" id="continueVerified">매장 설정 계속하기</button>
+      <button class="btn auth-secondary-button" id="loginVerified">로그인으로 이동</button>
+      <p id="authMessage" class="auth-inline-error" role="status" aria-live="polite"></p>
+    </div>`;
+    shell.querySelector('#continueVerified').onclick=async()=>{try{await afterAuth()}catch(e){displayMessage(e.message,true)}};
+    shell.querySelector('#loginVerified').onclick=async()=>{const email=remote.user?.email||'';await remote.logout();authForm('login',email);};
   }
   function onboarding(mode='choice'){
     const common=`<p id="authMessage" aria-live="polite"></p><button type="button" class="btn" id="onboardLogout">다른 이메일로 로그인</button>`;
@@ -888,7 +950,7 @@ async function enterRemote(){
     selectedCustomer=state.customers[0]?.id||'';activeConsultCid=selectedCustomer;view='today';shell.remove();
     document.querySelector('.brand small').textContent='온결 매니저 · 매장 통합관리';
     document.querySelector('.brand b').textContent=remote.shopName;
-    document.querySelector('.sidebottom').innerHTML='Supabase 서버 저장 · v1.1<br>실제 고객정보 사용 전 개인정보·운영 보안 점검이 필요합니다.';
+    document.querySelector('.sidebottom').innerHTML='Supabase 서버 저장 · v1.2<br>실제 고객정보 사용 전 개인정보·운영 보안 점검이 필요합니다.';
     document.querySelector('.topactions .pill').textContent='● 서버 연결';
     const crumb=document.querySelector('.topbar .crumb');if(crumb)crumb.firstChild.textContent=remote.shopName+' ';
     const avatar=document.querySelector('.topactions .avatar');if(avatar){avatar.title=remote.user?.email||remote.user?.phone||'로그인 계정';avatar.textContent=remote.role==='owner'?'관':remote.role==='manager'?'매':'직'}
@@ -898,7 +960,19 @@ async function enterRemote(){
     render();
   }
   if(!configurationReady()){shell.innerHTML=`<div class="auth-card"><h2>Supabase 설정 필요</h2><p>배포 파일 <code>config.js</code> 안에 Supabase Project URL과 Publishable Key를 입력하고 다시 배포해 줘.</p><p>ZIP의 <b>SETUP_KO.md</b>에서 전체 설치 순서를 확인할 수 있어.</p></div>`;return;}
-  if(await remote.restore())try{await afterAuth();}catch(e){shell.innerHTML=`<div class="auth-card"><h2>서버 연결 실패</h2><p>${esc(e.message)}</p><button class="btn" id="retryCloud">다시 시도</button><button class="btn" id="reloginCloud">로그인 새로하기</button></div>`;
+  const fragment=new URLSearchParams(location.hash.slice(1));
+  const authRedirectError=fragment.get('error_description')||fragment.get('error');
+  let verifiedFromLink=false;
+  if(fragment.get('access_token')&&fragment.get('refresh_token')){
+    remote.accept({access_token:fragment.get('access_token'),refresh_token:fragment.get('refresh_token'),
+      expires_in:Number(fragment.get('expires_in')||3600),token_type:fragment.get('token_type')||'bearer'});
+    verifiedFromLink=fragment.get('type')==='signup';
+    history.replaceState(null,'',location.pathname+location.search);
+  }else if(authRedirectError){
+    history.replaceState(null,'',location.pathname+location.search);
+    authForm('login');displayMessage('인증 링크를 확인할 수 없어요: '+authRedirectError,true);return;
+  }
+  if(await remote.restore())try{if(verifiedFromLink)authEmailVerified();else await afterAuth();}catch(e){shell.innerHTML=`<div class="auth-card"><h2>서버 연결 실패</h2><p>${esc(e.message)}</p><button class="btn" id="retryCloud">다시 시도</button><button class="btn" id="reloginCloud">로그인 새로하기</button></div>`;
     shell.querySelector('#retryCloud').onclick=()=>location.reload();shell.querySelector('#reloginCloud').onclick=async()=>{await remote.logout();authForm('login')}}
   else authForm('login');
   document.getElementById('remoteLogout')?.addEventListener('click',async()=>{if(remote.dirty&&!confirm('아직 서버에 저장되지 않은 데이터가 있을 수 있어. 로그아웃할까요?'))return;await remote.logout();location.reload()});

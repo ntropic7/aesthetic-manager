@@ -33,6 +33,7 @@ export class RemoteState {
     return json;
   }
   async signup(email,password){const r=await this.raw('/auth/v1/signup',{method:'POST',payload:{email,password},token:this.apikey});if(r?.access_token)this.accept(r);return r;}
+  async resendSignupEmail(email){return this.raw('/auth/v1/resend',{method:'POST',payload:{type:'signup',email},token:this.apikey});}
   accept(r){const until=Math.floor(Date.now()/1000)+Number(r.expires_in||3600);this.storeSession({...r,expires_at:r.expires_at||until});}
   async login(email,password){const r=await this.raw('/auth/v1/token?grant_type=password',{method:'POST',payload:{email,password},token:this.apikey});this.accept(r);return r;}
   async refresh(){if(this.refreshing)return this.refreshing;
