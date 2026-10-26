@@ -10,7 +10,7 @@ window.fetch=async(url,opts={})=>{
  else if(path.includes('/rest/v1/rpc/aesthetic_privacy_status'))data={processing_agreement:db.privacyShop.includes('processing_agreement'),shop_privacy_responsibility:db.privacyShop.includes('shop_privacy_responsibility'),evidence_count:db.privacyEvidence.length};
  else if(path.includes('/rest/v1/rpc/aesthetic_privacy_evidence')){db.privacyEvidence.push(b);data='ev-'+db.privacyEvidence.length;}
  else if(path.includes('/rest/v1/rpc/aesthetic_ack_own_staff_notice'))data=true;
- else if(path.includes('/rest/v1/shop_members?'))data=db.member?[{shop_id:db.shop,role:'owner'}]:[];
+ else if(path.includes('/rest/v1/shop_members?'))data=db.member?[{shop_id:db.shop,user_id:'bb0ac294-cccc-4f48-955a-908bd270cee2',role:'owner'}]:[];
  else if(path.includes('/rest/v1/rpc/aesthetic_create_shop_v3')){
    db.member=true;db.data.shopConfig.name=b.p_name;
    const pos=b.p_staff_position_name?{id:'pos-1',name:b.p_staff_position_name}:null;

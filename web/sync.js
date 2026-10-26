@@ -10,6 +10,15 @@ export class ApiFailure extends Error { constructor(msg,status=0){super(String(m
 const KEY='ongeol_supabase_session_v07';
 const deepCopy = obj => JSON.parse(JSON.stringify(obj));
 const enc = text => encodeURIComponent(text);
+// Access rights always come from shop_members, never staff_profiles.access_role.
+// The latter is only a default role to use when attaching a *new* account.
+export function withAccountRoles(profiles, members) {
+  const roleByUser = new Map((members || []).map(m => [m.user_id, m.role]));
+  return (profiles || []).map(p => ({
+    ...p,
+    linked_role: p.auth_user_id ? (roleByUser.get(p.auth_user_id) || null) : null
+  }));
+}
 export class RemoteState {
   constructor(onError){this.onError=onError;this.session=null;this.shopId=null;this.role=null;this.shopName='';this.revision=0;this.staff=[];this.positions=[];this.privacy={};this.joinRequests=[];this.connectionCode="";this.pending=null;this.running=false;this.failed=false;this.refreshing=null;this.dirty=false;
     try{const s=JSON.parse(localStorage.getItem(KEY)||'null');if(s?.access_token&&s?.refresh_token)this.session=s}catch{}}
@@ -54,11 +63,12 @@ export class RemoteState {
     });this.shopId=id;this.role='owner';return id;
   }
   async listStaff(){if(!this.shopId)return [];
-    const [staff,positions]=await Promise.all([
+    const [staff,positions,members]=await Promise.all([
       this.raw('/rest/v1/staff_profiles?select=id,shop_id,name,title,position_id,access_role,auth_user_id,active&shop_id=eq.'+enc(this.shopId)+'&order=created_at.asc'),
-      this.raw('/rest/v1/staff_positions?select=id,shop_id,name&shop_id=eq.'+enc(this.shopId)+'&order=created_at.asc')
+      this.raw('/rest/v1/staff_positions?select=id,shop_id,name&shop_id=eq.'+enc(this.shopId)+'&order=created_at.asc'),
+      this.raw('/rest/v1/shop_members?select=user_id,role&shop_id=eq.'+enc(this.shopId))
     ]);
-    this.staff=staff||[];this.positions=positions||[];
+    this.staff=withAccountRoles(staff,members);this.positions=positions||[];
     return this.staff;
   }
   async acknowledgeMyStaffNotice(id,version){return this.rpc('aesthetic_ack_own_staff_notice',{p_shop:this.shopId,p_staff:id,p_version:version});}

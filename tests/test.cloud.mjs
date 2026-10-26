@@ -12,8 +12,8 @@ globalThis.fetch=async (url,opts={})=>{
  if(u.includes('/auth/v1/token?grant_type=password'))data={access_token:'token-a',refresh_token:'refresh-a',expires_in:3600,user:{id:'u1',email:'u@test.example'}};
  else if(u.endsWith('/auth/v1/user')&&opts.method==='PUT')data={id:'u1',email:'u@test.example',user_metadata:body.data||{}};
  else if(u.endsWith('/auth/v1/user'))data={id:'u1',email:'u@test.example'};
- else if(u.includes('/rest/v1/shop_members?'))data=member?[{shop_id:'11111111-1111-4111-8111-111111111111',role:'owner'}]:[];
- else if(u.includes('/rest/v1/rpc/aesthetic_create_shop_v3')){member=true;staff.push({id:'staff-first',name:body.p_staff_name,position_id:'pos-first',access_role:'therapist',active:true});positions.push({id:'pos-first',name:body.p_staff_position_name});data='11111111-1111-4111-8111-111111111111';}
+ else if(u.includes('/rest/v1/shop_members?'))data=member?[{shop_id:'11111111-1111-4111-8111-111111111111',user_id:'u1',role:'owner'}]:[];
+ else if(u.includes('/rest/v1/rpc/aesthetic_create_shop_v3')){member=true;staff.push({id:'staff-first',name:body.p_staff_name,position_id:'pos-first',access_role:'therapist',auth_user_id:body.p_link_creator?'u1':null,active:true});positions.push({id:'pos-first',name:body.p_staff_position_name});data='11111111-1111-4111-8111-111111111111';}
  else if(u.includes('/rest/v1/rpc/aesthetic_add_position')){const x={id:'pos-1',name:body.p_name};positions.push(x);data=x.id;}
  else if(u.includes('/rest/v1/rpc/aesthetic_get_connection_code'))data='12345678-1234-4234-8234-123456789abc';
  else if(u.includes('/rest/v1/rpc/aesthetic_rotate_connection_code'))data='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -53,9 +53,9 @@ test('Supabase configuration checks valid, unsafe keys rejected',()=>{
 test('password login, owner onboarding, shop data read and persisted state CAS',async()=>{
  const errors=[],r=new RemoteState(m=>errors.push(m));
  await r.login('u@test.example','anything'); assert.equal(r.token,'token-a');
- assert.equal(await r.membership(),null);await r.createShop('테스트샵','첫 직원','원장',false);
+ assert.equal(await r.membership(),null);await r.createShop('테스트샵','첫 직원','원장',true);
  assert.equal((await r.membership()).role,'owner');
- assert.equal((await r.read()).customers.length,0);assert.equal(r.staff.length,1);assert.equal(r.positions.length,1);
+ assert.equal((await r.read()).customers.length,0);assert.equal(r.staff.length,1);assert.equal(r.positions.length,1);assert.equal(r.staff[0].linked_role,'owner');assert.equal(r.staff[0].access_role,'therapist');
  const pos=await r.addPosition('실장');await r.addStaff('김민지',pos,'therapist');await r.listStaff();
  assert.equal(r.staff.length,2);assert.equal(r.staff[1].position_id,pos);assert.equal(r.positions[1].name,'실장');assert.equal(r.shopName,'테스트샵');
  r.write({customers:[{id:'C1',name:'가상 고객'}],reservations:[],photos:[{id:'PH1',storagePath:'x.jpg',dataUrl:'sensitive data'}]});
