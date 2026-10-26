@@ -1,6 +1,16 @@
-# 온결 매니저 v1.1 — 예약 기반 매장 통합관리
+# 온결 매니저 v1.3 — 설정 UX 간소화
+
+[설정 업데이트/배포 가이드](docs/SETTINGS_UX_V13.md) · [경쟁서비스 UX·차별화 리서치](docs/COMPETITOR_UX_DIFFERENTIATION_V13.md)
+
+# 온결 매니저 v1.2.1 — 예약 기반 매장 통합관리
 
 Cloudflare Pages에서 배포하는 PC·태블릿·스마트폰 공용 웹앱(PWA)과 Supabase PostgreSQL/Auth/Storage 프로젝트입니다. 개발 프로젝트명은 `aesthetic-manager`, 앱 표시명은 **온결 매니저**, 로그인 후에는 매장 브랜드가 메인에 표시됩니다.
+
+## v1.2.1 권한 표시 수정
+
+- 직원 프로필의 `access_role`은 **계정 연결 전 기본 권한**이며, 실제 로그인 권한은 `shop_members.role`을 기준으로 표시합니다.
+- 최고관리자 계정과 연결된 직원은 `최고관리자`로 표시되며 직원 수정에서 변경할 수 없습니다.
+- 기존 SQL 및 고객·예약 데이터는 변경하지 않습니다. 새 SQL 실행 불필요.
 
 ## v1.1 주요 변경
 
