@@ -4,7 +4,7 @@ from zipfile import ZipFile, ZIP_DEFLATED
 import re
 
 ROOT = Path(__file__).resolve().parent
-print('온결 매니저 v1.1 Supabase 설정 → Pages 업로드용 ZIP 생성')
+print('온결 매니저 v1.3 Supabase 설정 → Pages 업로드용 ZIP 생성')
 url = input('Supabase Project URL (https://xxx.supabase.co): ').strip().rstrip('/')
 key = input('Supabase Publishable key (sb_publishable_...): ').strip()
 if not re.fullmatch(r'https://[a-z0-9-]+\.supabase\.co', url, re.I):
